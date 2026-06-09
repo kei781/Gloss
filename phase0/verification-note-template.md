@@ -43,7 +43,8 @@
 | 결과 JSONL |  |
 | 평균 TTFT |  |
 | 평균 tok/s |  |
-| token count source | usage / estimate |
+| token count source | usage / estimate / bench approx |
+| gate metric eligible | yes / no. `estimate`와 `--no-stream`은 보조 수치 |
 | CPU/RAM 관찰 |  |
 | NPU 직접 증거 |  |
 | 판정 | Pass / Fail / Partial |

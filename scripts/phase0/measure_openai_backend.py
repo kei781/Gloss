@@ -198,7 +198,11 @@ def apply_config(args: argparse.Namespace) -> None:
             config = load_json(config_path)
             config_dir = config_path.parent
 
-    if config or args.profile or env_value("GLOSS_PHASE0_ACTIVE_MODEL_PROFILE"):
+    if (
+        config
+        or args.profile
+        or env_value("GLOSS_PHASE0_ACTIVE_MODEL_PROFILE", "GLOSS_ACTIVE_MODEL_PROFILE")
+    ):
         profile_name, profile = load_profile(args, config, config_dir)
 
     benchmarks = config.get("benchmarks") if isinstance(config.get("benchmarks"), dict) else {}
@@ -477,7 +481,11 @@ def summarize_result(
 ) -> dict[str, Any]:
     elapsed_s = max(ended_at - started_at, 0.0)
     ttft_s = None if first_token_at is None else max(first_token_at - started_at, 0.0)
-    decode_window_s = max(ended_at - (first_token_at or started_at), 0.0)
+    decode_window_s = (
+        max(ended_at - first_token_at, 0.0)
+        if first_token_at is not None
+        else None
+    )
 
     completion_tokens = None
     prompt_tokens = None
@@ -492,8 +500,18 @@ def summarize_result(
         completion_tokens = max(1, math.ceil(len(output) / args.chars_per_token))
         token_count_source = "estimated_chars_per_token"
 
+    end_to_end_tokens_per_second = (
+        completion_tokens / elapsed_s if elapsed_s > 0 else None
+    )
     tokens_per_second = (
-        completion_tokens / decode_window_s if decode_window_s > 0 else None
+        completion_tokens / decode_window_s
+        if stream and decode_window_s and decode_window_s > 0
+        else None
+    )
+    gate_metric_eligible = (
+        stream
+        and token_count_source == "usage"
+        and tokens_per_second is not None
     )
 
     return {
@@ -509,7 +527,13 @@ def summarize_result(
         "completion_tokens": completion_tokens,
         "prompt_tokens": prompt_tokens,
         "token_count_source": token_count_source,
+        "token_count_is_estimated": token_count_source != "usage",
         "tokens_per_second": tokens_per_second,
+        "tokens_per_second_kind": (
+            "stream_decode" if stream else "unavailable_non_stream"
+        ),
+        "end_to_end_tokens_per_second": end_to_end_tokens_per_second,
+        "gate_metric_eligible": gate_metric_eligible,
         "chunks": chunks,
         "output_chars": len(output),
         "output_preview": output[:500],
@@ -531,22 +555,65 @@ def print_summary(rows: list[dict[str, Any]]) -> None:
     if not successful:
         return
 
-    tok_values = [
+    gate_tok_values = [
         row["result"]["tokens_per_second"]
         for row in successful
-        if row["result"].get("tokens_per_second") is not None
+        if row["result"].get("gate_metric_eligible")
+        and row["result"].get("tokens_per_second") is not None
+    ]
+    supporting_tok_values = [
+        row["result"]["tokens_per_second"]
+        for row in successful
+        if not row["result"].get("gate_metric_eligible")
+        and row["result"].get("tokens_per_second") is not None
+    ]
+    end_to_end_values = [
+        row["result"]["end_to_end_tokens_per_second"]
+        for row in successful
+        if row["result"].get("end_to_end_tokens_per_second") is not None
     ]
     ttft_values = [
         row["result"]["ttft_s"]
         for row in successful
         if row["result"].get("ttft_s") is not None
     ]
-    if tok_values:
-        avg_tok = sum(tok_values) / len(tok_values)
-        log(f"avg tokens_per_second: {avg_tok:.2f}")
+    estimated_rows = [
+        row
+        for row in successful
+        if row["result"].get("token_count_source") != "usage"
+    ]
+    non_stream_rows = [
+        row for row in successful if not row["result"].get("stream")
+    ]
+
+    if gate_tok_values:
+        avg_tok = sum(gate_tok_values) / len(gate_tok_values)
+        log(f"avg gate-eligible decode tokens_per_second: {avg_tok:.2f}")
+    if supporting_tok_values:
+        avg_supporting = sum(supporting_tok_values) / len(supporting_tok_values)
+        log(
+            "avg supporting decode tokens_per_second: "
+            f"{avg_supporting:.2f} (not gate-eligible)",
+            level="WARN",
+        )
+    if end_to_end_values:
+        avg_e2e = sum(end_to_end_values) / len(end_to_end_values)
+        log(f"avg end_to_end_tokens_per_second: {avg_e2e:.2f}")
     if ttft_values:
         avg_ttft = sum(ttft_values) / len(ttft_values)
         log(f"avg ttft_s: {avg_ttft:.2f}")
+    if estimated_rows:
+        log(
+            "token_count_source != usage; token counts are estimated and "
+            "must be treated as supporting evidence only.",
+            level="WARN",
+        )
+    if non_stream_rows:
+        log(
+            "--no-stream measures end-to-end throughput; decode tok/s is "
+            "unavailable for Phase 0 gate use.",
+            level="WARN",
+        )
 
 
 def main() -> int:
@@ -579,6 +646,17 @@ def main() -> int:
             tps = result.get("tokens_per_second")
             tps_text = "n/a" if tps is None else f"{tps:.2f}"
             log(f"run {index}: ok, tok/s={tps_text}")
+            if not result.get("gate_metric_eligible"):
+                reason = (
+                    "non-stream mode"
+                    if not result.get("stream")
+                    else f"token_count_source={result.get('token_count_source')}"
+                )
+                log(
+                    f"run {index}: not gate-eligible ({reason}); "
+                    "use as supporting evidence only.",
+                    level="WARN",
+                )
         except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
             rows.append(
                 {

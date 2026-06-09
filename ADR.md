@@ -178,6 +178,6 @@
 
 **Context**: Phase 0부터 설치/검증 스크립트가 여러 런타임(PowerShell, Python)을 사용한다. 콘솔 출력이 각 스크립트에 직접 흩어지면 나중에 로그를 파일, JSONL, 앱 대시보드, IPC로 전환할 때 호출부를 모두 수정해야 한다. 모델명, API key, endpoint, npurun/QNN 경로도 커맨드와 config에 흩어지면 실기 장비별 전환이 어렵다.
 
-**Decision**: 모든 스크립트 출력은 각 런타임의 공통 `log()` 함수를 통과한다. Phase 0의 Python 로그는 `scripts/phase0/phase0_common.py`, PowerShell 로그는 `scripts/phase0/common.ps1`이 담당한다. 주요 key, endpoint, active model profile, runtime model override, npurun/QNN/model path, output dir는 env에서 우선 관리한다. 실제 `phase0/.env`는 git ignore하고, `phase0/.env.example`만 버전 관리한다.
+**Decision**: 모든 스크립트 출력은 각 런타임의 공통 `log()` 함수를 통과한다. Phase 0의 Python 로그는 `scripts/phase0/phase0_common.py`, PowerShell 로그는 `scripts/phase0/common.ps1`이 담당한다. 공유 기본값은 config/profile에 두고, API key, npurun/QNN/model path 같은 머신별 값과 endpoint/profile/model/output override만 env에서 우선 관리한다. 실제 `phase0/.env`는 git ignore하고, `phase0/.env.example`만 버전 관리한다.
 
 **Consequences**: 로그 수집 방식을 바꿀 때 공통 `log()`만 수정하면 된다. 모델 교체와 장비별 경로 변경은 env/profile 수정으로 처리한다. 단, Python/PowerShell 런타임별 `log()` 구현은 각각 존재하므로 제품 본 구현에서는 `src/gloss/logging/`으로 한 번 더 통합한다.

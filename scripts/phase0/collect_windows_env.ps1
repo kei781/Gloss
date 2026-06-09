@@ -15,14 +15,14 @@ if ($loadedEnv.Count -gt 0) {
     log "loaded env file: $envFilePath"
 }
 
-if ($OutputDir -eq ".\phase0\runs\latest") {
+if (-not $PSBoundParameters.ContainsKey("OutputDir")) {
     $outputDirFromEnv = Get-EnvValue -Names @("GLOSS_PHASE0_OUTPUT_DIR")
     if (-not [string]::IsNullOrWhiteSpace($outputDirFromEnv)) {
         $OutputDir = $outputDirFromEnv
     }
 }
 
-if ($SampleSeconds -eq 5) {
+if (-not $PSBoundParameters.ContainsKey("SampleSeconds")) {
     $sampleSecondsFromEnv = Get-EnvValue -Names @("GLOSS_PHASE0_SAMPLE_SECONDS")
     if (-not [string]::IsNullOrWhiteSpace($sampleSecondsFromEnv)) {
         $SampleSeconds = [int]$sampleSecondsFromEnv
@@ -61,7 +61,7 @@ $environment = [ordered]@{
     videoControllers = Try-Collect { @(Get-CimInstance Win32_VideoController | ForEach-Object { ConvertTo-PlainObject $_ }) }
     qualcommDevices = Try-Collect {
         @(Get-CimInstance Win32_PnPEntity | Where-Object {
-            ($_.Name -match "Qualcomm|Hexagon|NPU|Neural|AI|HTP") -or
+            ($_.Name -match "Qualcomm|Hexagon|\bNPU\b|Neural Processing|HTP") -or
             ($_.Manufacturer -match "Qualcomm")
         } | ForEach-Object { ConvertTo-PlainObject $_ })
     }
@@ -72,7 +72,7 @@ $environment | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 -Path $envir
 
 $counterCandidates = @(Try-Collect {
     @(Get-Counter -ListSet * -ErrorAction SilentlyContinue | Where-Object {
-        $_.CounterSetName -match "NPU|Neural|AI|HTP|GPU|Compute|Qualcomm"
+        $_.CounterSetName -match "\bNPU\b|Neural Processing|HTP|GPU|Compute|Qualcomm"
     } | ForEach-Object {
         [ordered]@{
             counterSetName = $_.CounterSetName

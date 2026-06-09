@@ -12,6 +12,7 @@ Gloss/
 │  ├─ .env.example
 │  ├─ config.example.json
 │  ├─ directory-structure.md
+│  ├─ evidence/                     # 추적 대상 핵심 텍스트 증거
 │  ├─ model-profiles.json
 │  ├─ verification-note-template.md
 │  ├─ runs/                         # ignored, 측정 산출물
@@ -55,14 +56,16 @@ Gloss/
 ## 구조 원칙
 
 - 로그는 각 런타임의 `log()` 함수만 통해 출력한다. Python은 `scripts/phase0/phase0_common.py`, PowerShell은 `scripts/phase0/common.ps1`이 Phase 0 로그의 단일 진입점이다.
-- 주요 key, endpoint, profile, 모델명 override, 로컬 경로는 env에서 우선 관리한다. 실제 `phase0/.env`는 git에 올리지 않고, `phase0/.env.example`만 커밋한다.
+- 로컬 경로와 비밀값은 env에서 우선 관리한다. 실제 `phase0/.env`는 git에 올리지 않고, `phase0/.env.example`만 커밋한다.
+- 공유 기본값(`run_id`, active profile, `runs`, `max_tokens`, prompt, output 규칙)은 `phase0/config.example.json`과 `phase0/model-profiles.json`을 단일 source로 둔다.
 - 모델 교체는 `phase0/model-profiles.json`의 profile 추가/수정과 `GLOSS_PHASE0_ACTIVE_MODEL_PROFILE` 변경으로 처리한다.
 - 측정 산출물은 `phase0/runs/` 아래에 남기고 git에는 올리지 않는다.
+- 작은 텍스트 증거(JSONL, backend log excerpt, benchmark summary)는 `phase0/evidence/<date>/`에 선별해 커밋한다.
 - 실기 결과는 `phase0/verification-notes/`에 날짜별로 남긴다.
 
 ## 이번 수정에 포함된 내용
 
-- `phase0/.env.example` 추가: 주요 key, base URL, active profile, 모델명 override, npurun/QNN/model dir, 측정 파라미터 관리.
+- `phase0/.env.example` 추가: API key, npurun/QNN/model dir 등 로컬 값과 선택적 override 관리.
 - `scripts/phase0/phase0_common.py` 추가: Python용 `log()`, `.env` loader, env lookup.
 - `scripts/phase0/common.ps1` 추가: PowerShell용 `log()`, `.env` loader, env lookup, path resolver.
 - `scripts/phase0/measure_openai_backend.py` 수정: 모든 출력이 `log()`를 통과하고, CLI > env > profile/config 순서로 값을 결정.

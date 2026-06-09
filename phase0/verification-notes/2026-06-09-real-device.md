@@ -32,8 +32,9 @@ Partial 이유:
 | counter 후보 JSON | `phase0/runs/real-device/performance-counter-candidates.json` |
 | counter 샘플 JSON | `phase0/runs/real-device/counter-sample.json` |
 | 작업 관리자 스크린샷 | 미수집 |
-| 백엔드 로그 | `phase0/runs/real-device/npurun/run-phi-3.5-mini.txt`, `bench-phi-3.5-mini.txt`, `serve-stderr.txt` |
+| 백엔드 로그 | `phase0/evidence/2026-06-09-real-device/bench-phi-3.5-mini-summary.txt`, `backend-log-excerpt.txt` |
 | ETW/perf trace | 미수집 |
+| 커밋 증거 | `phase0/evidence/2026-06-09-real-device/` |
 | env 파일 | `phase0/.env.example` 기준, 로컬 `phase0/.env`는 git ignore |
 | log 구현 | `scripts/phase0/phase0_common.py`, `scripts/phase0/common.ps1` |
 
@@ -94,10 +95,11 @@ QAIRT SDK    (sdk.yaml not parseable; root: C:\agent\Gloss\.venv-arm64\Lib\site-
 | 모델 | phi-3.5-mini |
 | 양자화 | W4A16 |
 | 실행 명령 | `npurun run phi-3.5-mini ...`, `npurun bench phi-3.5-mini`, `npurun serve --model phi-3.5-mini` |
-| 결과 JSONL | `phase0/runs/real-device/npurun/openai-phi-3.5-mini.jsonl` |
+| 결과 JSONL | `phase0/evidence/2026-06-09-real-device/openai-phi-3.5-mini.jsonl` |
 | 평균 TTFT | OpenAI 측정 평균 약 0.08s, bench warm 평균 102.40ms |
 | 평균 tok/s | bench warm aggregate post-TTFT 15.6 tok/s |
 | token count source | bench approx tokens, OpenAI 측정은 usage 미제공으로 char estimate |
+| gate metric eligible | bench 값은 Phase 0 게이트 근거, OpenAI char estimate는 보조 수치 |
 | CPU/RAM 관찰 | 별도 정량 미수집 |
 | NPU 직접 증거 | Genie/QNN/HTP backend config 및 npurun backend log |
 | 판정 | Pass |

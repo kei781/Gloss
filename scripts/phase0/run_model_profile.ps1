@@ -19,7 +19,7 @@ if ($loadedEnv.Count -gt 0) {
     log "loaded env file: $envFilePath"
 }
 
-if ($Config -eq ".\phase0\config.example.json") {
+if (-not $PSBoundParameters.ContainsKey("Config")) {
     $configFromEnv = Get-EnvValue -Names @("GLOSS_PHASE0_CONFIG")
     if (-not [string]::IsNullOrWhiteSpace($configFromEnv)) {
         $Config = $configFromEnv

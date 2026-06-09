@@ -13,9 +13,15 @@ function log {
     }
 
     if ($env:GLOSS_LOG_FORMAT -eq "json") {
-        Write-Host ($record | ConvertTo-Json -Compress)
+        $line = $record | ConvertTo-Json -Compress
     } else {
-        Write-Host "[$Level] $Message"
+        $line = "[$Level] $Message"
+    }
+
+    if ($Level -in @("WARN", "ERROR")) {
+        [Console]::Error.WriteLine($line)
+    } else {
+        [Console]::Out.WriteLine($line)
     }
 }
 
