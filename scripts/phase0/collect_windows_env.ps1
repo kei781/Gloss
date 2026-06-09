@@ -10,7 +10,7 @@ New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 function ConvertTo-PlainObject {
     param([object]$InputObject)
 
-    $InputObject | Select-Object *
+    $InputObject | Select-Object -Property * -ExcludeProperty CimClass,CimInstanceProperties,CimSystemProperties,PSComputerName
 }
 
 function Try-Collect {

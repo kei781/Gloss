@@ -1,3 +1,7 @@
 __pycache__/
 *.pyc
+.downloads/
+.models/
+.tools/
+.venv-arm64/
 phase0/runs/
