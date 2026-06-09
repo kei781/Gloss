@@ -1,0 +1,32 @@
+{
+  "run_id": "2026-06-09-xplus",
+  "backend": {
+    "name": "npurun",
+    "base_url": "http://127.0.0.1:8000/v1",
+    "api_key": "local"
+  },
+  "models": {
+    "text": "qwen3-text-small",
+    "vision": "qwen3-vl-4b"
+  },
+  "benchmarks": {
+    "runs": 3,
+    "max_tokens": 128,
+    "text_prompt": "다음 문장을 한국어로 자연스럽게 번역해줘: The moonlight fell softly over the old town.",
+    "vision_prompt": "이미지에 보이는 외국어 텍스트만 한국어로 번역해줘."
+  },
+  "evidence": {
+    "accepted_direct_evidence": [
+      "Task Manager NPU% screenshot",
+      "PDH NPU counter sample",
+      "Genie/QNN/HTP backend log",
+      "Vendor sample output",
+      "ETW/perf trace"
+    ],
+    "supporting_evidence": [
+      "tok/s",
+      "CPU idle",
+      "RAM usage"
+    ]
+  }
+}

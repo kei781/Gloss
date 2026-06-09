@@ -104,6 +104,7 @@
 
 - **Phase 0 — NPU 검증 게이트 (선결, 코드 거의 없음)**
   - 노트북 X Plus에서 백엔드로 Qwen3-VL-4B·소형 텍스트 모델이 **실제로 NPU에 적재·가동**되는지 확인.
+  - 검증 절차와 산출물은 `phase0/README.md`와 `phase0/verification-note-template.md`를 기준으로 남긴다.
   - **검증 산출물**: 검증일, OS/드라이버/백엔드/모델 버전, 실행 명령, 로그/스크린샷, tok/s, CPU/RAM, NPU 사용 증거를 Phase 0 검증 노트로 남긴다.
   - **합격 기준**: ~4B 모델이 **> 5 tok/s** AND NPU 사용의 직접 증거 1개 이상.
     - 작업관리자/PDH counter가 읽히면 **NPU% > 0** 필수.
