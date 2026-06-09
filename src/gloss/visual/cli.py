@@ -53,8 +53,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        capture = capture_if_requested(args)
         source_text = read_ocr_text(args)
+        if source_text is None and not args.dry_run:
+            raise VisualEngineError(
+                "VLM/OCR image path is not wired yet. Provide --ocr-text or --ocr-file."
+            )
+        capture = capture_if_requested(args)
         if source_text is None and args.dry_run and capture is not None:
             source_text = f"Captured screen region: {capture.image_path}"
         if source_text is None:

@@ -3,6 +3,7 @@ import io
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from gloss.visual.cli import main
 
@@ -34,6 +35,14 @@ class VisualCliTest(unittest.TestCase):
             exit_code = main(["--dry-run"])
 
         self.assertEqual(exit_code, 1)
+
+    def test_non_dry_run_requires_ocr_before_capture(self) -> None:
+        with contextlib.redirect_stderr(io.StringIO()):
+            with patch("gloss.visual.cli.PowerShellScreenCapture") as capture_class:
+                exit_code = main(["--capture-rect", "0,0,100,100"])
+
+        self.assertEqual(exit_code, 1)
+        capture_class.assert_not_called()
 
 
 if __name__ == "__main__":
