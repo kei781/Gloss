@@ -1,0 +1,22 @@
+npurun run / bench backend evidence
+
+loaded manifest name=phi-3.5-mini arch=phi3 quant=W4A16 qnn_sdk=2.43.1 backend=Genie
+[INFO] "Using create From Binary"
+[INFO] "Allocated total size = 816554496 across 7 buffers"
+Genie dialog created (libGenie 1.18.0)
+
+npurun serve stderr excerpt
+
+[INFO] "Using create From Binary"
+[INFO] "Allocated total size = 816554496 across 7 buffers"
+[loaded phi-3.5-mini (phi3, W4A16, ctx 4096) in 6.78s]
+[warmup query in 491.64ms]
+npurun serve listening on http://127.0.0.1:11435
+  - OpenAI-compatible: POST /v1/chat/completions, GET /v1/models
+  - Ollama-compatible: POST /api/generate, POST /api/chat, GET /api/tags
+  - GET /healthz
+
+Backend config evidence recorded in verification note:
+- genie_config.json backend.type = QnnHtp
+- htp_backend_ext_config.json dsp_arch = v73
+- htp_backend_ext_config.json mem_type = shared_buffer

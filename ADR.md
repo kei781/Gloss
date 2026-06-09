@@ -8,9 +8,9 @@
 
 | 버전 | 작성일 | 작성자 |
 |---|---|---|
-| v0.3.1 | 2026-06-09 | 호크 (노상운) |
+| v0.3.3 | 2026-06-09 | 호크 (노상운) |
 
-> v0.3.1: NPU 검증 게이트 직접 증거화, CPU/GPU 보조 작업 범위 정리, 성공 기준 정량화. v0.3: 프로젝트명 **Gloss** 확정 + tagline 추가. (v0.2: ADR-001/003/009/010 갱신, ADR-012(모델 사이징)·013(Visual 2-경로)·014(실시간 자막 비목표) 추가.)
+> v0.3.3: Phase 0 디렉토리 구조, `log()` 단일 출력 계약, env 기반 key/model 관리 추가. v0.3.2: 모델 프로파일 기반 교체 구조 추가. v0.3.1: NPU 검증 게이트 직접 증거화, CPU/GPU 보조 작업 범위 정리, 성공 기준 정량화. v0.3: 프로젝트명 **Gloss** 확정 + tagline 추가. (v0.2: ADR-001/003/009/010 갱신, ADR-012(모델 사이징)·013(Visual 2-경로)·014(실시간 자막 비목표) 추가.)
 
 ---
 
@@ -123,9 +123,9 @@
 
 **Context**: NPU 모델은 그래프 컴파일·적재가 무거워(수초) 즉시 교체 불가. 다중 모델 동시 적재도 NPU 메모리상 비보장. 또한 용례별로 사이즈 티어(빠른 소형 ↔ 품질 4B)를 바꾸고 싶을 수 있음(ADR-012).
 
-**Decision**: 모델 변경은 **드롭다운 → 현재 언로드 → 새 모델 적재(로딩 상태 표시)**. 사이즈 티어 전환도 같은 방식. OpenAI `model` 필드 즉시 라우팅은 기대하지 않음.
+**Decision**: 모델 변경은 **드롭다운 → 현재 언로드 → 새 모델 적재(로딩 상태 표시)**. 사이즈 티어 전환도 같은 방식. Phase 0 검증과 제품 구현 모두 **모델 프로파일 목록 + active profile** 구조를 사용한다. OpenAI `model` 필드는 현재 적재된 런타임 모델명을 전달하는 용도이며, 즉시 라우팅은 기대하지 않음.
 
-**Consequences**: 구현 단순·안정. UX는 수초 지연 동반. instant 욕심을 배제해 범위 보호.
+**Consequences**: 구현 단순·안정. UX는 수초 지연 동반. instant 욕심을 배제해 범위 보호. Qwen3-4B, Qwen3.5-4B, Gemma 4 E4B 같은 후보 교체는 코드 수정이 아니라 profile 추가/수정으로 처리한다.
 
 ---
 
@@ -170,3 +170,14 @@
 **Decision**: **실시간 흐르는 자막은 본 도구의 비목표**로 둔다. 영역 감시(FR-V3)는 **느린 전환(슬라이드·정지 자막)** 에 한정. 실시간 영상 자막이 필요하면 **Windows Live Captions**로 위임.
 
 **Consequences**: 달성 불가능한 목표를 제거해 범위·기대치 보호. 영상 자막 실시간성은 OS 기능에 의존하며, Live Captions의 지원 언어·Windows 빌드·사용 가능 여부는 필요 시 별도 검증 노트에 남긴다.
+
+---
+
+## ADR-015 — 로그와 설정: `log()` 단일 진입점 + env 우선. 산재 출력·하드코딩 기각
+**Status**: Accepted
+
+**Context**: Phase 0부터 설치/검증 스크립트가 여러 런타임(PowerShell, Python)을 사용한다. 콘솔 출력이 각 스크립트에 직접 흩어지면 나중에 로그를 파일, JSONL, 앱 대시보드, IPC로 전환할 때 호출부를 모두 수정해야 한다. 모델명, API key, endpoint, npurun/QNN 경로도 커맨드와 config에 흩어지면 실기 장비별 전환이 어렵다.
+
+**Decision**: 모든 스크립트 출력은 각 런타임의 공통 `log()` 함수를 통과한다. Phase 0의 Python 로그는 `scripts/phase0/phase0_common.py`, PowerShell 로그는 `scripts/phase0/common.ps1`이 담당한다. 공유 기본값은 config/profile에 두고, API key, npurun/QNN/model path 같은 머신별 값과 endpoint/profile/model/output override만 env에서 우선 관리한다. 실제 `phase0/.env`는 git ignore하고, `phase0/.env.example`만 버전 관리한다.
+
+**Consequences**: 로그 수집 방식을 바꿀 때 공통 `log()`만 수정하면 된다. 모델 교체와 장비별 경로 변경은 env/profile 수정으로 처리한다. 단, Python/PowerShell 런타임별 `log()` 구현은 각각 존재하므로 제품 본 구현에서는 `src/gloss/logging/`으로 한 번 더 통합한다.

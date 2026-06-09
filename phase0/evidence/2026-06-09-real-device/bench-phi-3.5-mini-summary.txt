@@ -1,0 +1,16 @@
+npurun bench: phi-3.5-mini (phi3, W4A16, ctx 4096)
+
+loaded manifest name=phi-3.5-mini arch=phi3 quant=W4A16 qnn_sdk=2.43.1 backend=Genie
+Genie dialog created (libGenie 1.18.0)
+
+warm summary (skipping first query)
+queries:                       3
+avg total per query:           13.50s
+avg time-to-first-token:       102.40ms
+avg generation time:           13.40s
+aggregate tok/s (incl ttft):   15.5
+aggregate tok/s (post ttft):   15.6
+
+Phase 0 interpretation:
+- post-TTFT 15.6 tok/s passes the >5 tok/s text gate.
+- This is the preferred speed evidence for this run because the OpenAI-compatible measurement did not return usage token counts.
