@@ -10,6 +10,7 @@ from urllib.request import Request, urlopen
 
 
 SourceKind = Literal["text", "file", "url"]
+FILE_TEXT_ENCODINGS = ("utf-8-sig", "utf-8", "cp949", "euc-kr")
 
 
 @dataclass(frozen=True)
@@ -42,7 +43,7 @@ def extract_text_source(
     if file is not None:
         if not file.exists():
             raise ExtractionError(f"File not found: {file}")
-        data = file.read_text(encoding="utf-8")
+        data = read_text_file(file)
         if file.suffix.lower() in {".html", ".htm"}:
             title, body = extract_readable_text_from_html(data)
         else:
@@ -53,6 +54,22 @@ def extract_text_source(
     html = fetch_url(url, timeout_s=timeout_s)
     title, body = extract_readable_text_from_html(html)
     return ExtractedDocument("url", url, title, body)
+
+
+def read_text_file(path: Path) -> str:
+    last_decode_error: UnicodeDecodeError | None = None
+    for encoding in FILE_TEXT_ENCODINGS:
+        try:
+            return path.read_text(encoding=encoding)
+        except UnicodeDecodeError as exc:
+            last_decode_error = exc
+        except OSError as exc:
+            raise ExtractionError(f"File read failed: {path}: {exc}") from exc
+
+    encodings = ", ".join(FILE_TEXT_ENCODINGS)
+    raise ExtractionError(
+        f"File encoding not supported: {path}. Expected one of: {encodings}."
+    ) from last_decode_error
 
 
 def fetch_url(url: str, timeout_s: float) -> str:

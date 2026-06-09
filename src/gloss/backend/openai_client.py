@@ -22,6 +22,8 @@ class GenerationResult:
     end_to_end_tokens_per_second: float | None
     chunks: int
     usage: dict[str, Any] | None
+    finish_reason: str | None
+    truncated: bool
 
 
 class OpenAIChatClient:
@@ -80,6 +82,7 @@ class OpenAIChatClient:
         first_token_at: float | None = None
         output_parts: list[str] = []
         usage: dict[str, Any] | None = None
+        finish_reason: str | None = None
         chunks = 0
 
         try:
@@ -99,6 +102,10 @@ class OpenAIChatClient:
 
                     if event.get("usage"):
                         usage = event["usage"]
+
+                    event_finish_reason = _extract_finish_reason(event)
+                    if event_finish_reason:
+                        finish_reason = event_finish_reason
 
                     text = _extract_delta_text(event)
                     if not text:
@@ -120,6 +127,7 @@ class OpenAIChatClient:
             chunks=chunks,
             chars_per_token=self.chars_per_token,
             stream=True,
+            finish_reason=finish_reason,
         )
 
     def _complete_non_stream(self, payload: dict[str, Any]) -> GenerationResult:
@@ -133,7 +141,9 @@ class OpenAIChatClient:
 
         ended_at = time.perf_counter()
         choices = data.get("choices") or []
-        message = choices[0].get("message", {}) if choices else {}
+        choice = choices[0] if choices and isinstance(choices[0], dict) else {}
+        message = choice.get("message", {}) if isinstance(choice, dict) else {}
+        finish_reason = _coerce_optional_str(choice.get("finish_reason"))
         content = message.get("content", "")
         if isinstance(content, list):
             output = "".join(
@@ -151,6 +161,7 @@ class OpenAIChatClient:
             chunks=0,
             chars_per_token=self.chars_per_token,
             stream=False,
+            finish_reason=finish_reason,
         )
 
 
@@ -160,7 +171,7 @@ class BackendError(RuntimeError):
 
 def _extract_delta_text(event: dict[str, Any]) -> str:
     choices = event.get("choices") or []
-    if not choices:
+    if not choices or not isinstance(choices[0], dict):
         return ""
     delta = choices[0].get("delta") or {}
     content = delta.get("content", "")
@@ -173,6 +184,19 @@ def _extract_delta_text(event: dict[str, Any]) -> str:
     return ""
 
 
+def _extract_finish_reason(event: dict[str, Any]) -> str | None:
+    choices = event.get("choices") or []
+    if not choices or not isinstance(choices[0], dict):
+        return None
+    return _coerce_optional_str(choices[0].get("finish_reason"))
+
+
+def _coerce_optional_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    return str(value)
+
+
 def _summarize_generation(
     *,
     output: str,
@@ -183,6 +207,7 @@ def _summarize_generation(
     chunks: int,
     chars_per_token: float,
     stream: bool,
+    finish_reason: str | None,
 ) -> GenerationResult:
     elapsed_s = max(ended_at - started_at, 0.0)
     ttft_s = None if first_token_at is None else max(first_token_at - started_at, 0.0)
@@ -213,6 +238,7 @@ def _summarize_generation(
     end_to_end_tokens_per_second = (
         completion_tokens / elapsed_s if elapsed_s > 0 else None
     )
+    truncated = finish_reason == "length"
 
     return GenerationResult(
         text=output,
@@ -226,4 +252,6 @@ def _summarize_generation(
         end_to_end_tokens_per_second=end_to_end_tokens_per_second,
         chunks=chunks,
         usage=usage,
+        finish_reason=finish_reason,
+        truncated=truncated,
     )

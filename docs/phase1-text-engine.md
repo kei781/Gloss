@@ -12,7 +12,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\phase0\run_model_profile.ps1 
   -Action serve
 ```
 
-다른 터미널에서 `PYTHONPATH`를 지정하고 Text 엔진을 실행한다.
+다른 터미널에서 Text 엔진을 실행한다. 개발 체크는 `PYTHONPATH=src`로 할 수 있고,
+패키지 설치 후에는 `gloss-text` 콘솔 명령도 사용할 수 있다.
 
 ```powershell
 $env:PYTHONPATH='src'
@@ -21,6 +22,11 @@ $env:PYTHONPATH='src'
   --text "The moonlight fell softly over the old town." `
   --output .\runs\phase1\sample.md
 Remove-Item Env:\PYTHONPATH
+```
+
+```powershell
+.\.venv-arm64\Scripts\python.exe -m pip install -e .
+gloss-text --profile phi-3.5-mini --text "Hello."
 ```
 
 ## 입력 모드
@@ -33,7 +39,8 @@ $env:PYTHONPATH='src'
 Remove-Item Env:\PYTHONPATH
 ```
 
-UTF-8 텍스트/HTML 파일:
+텍스트/HTML 파일:
+파일 입력은 UTF-8, UTF-8 BOM, CP949, EUC-KR 순서로 읽는다.
 
 ```powershell
 $env:PYTHONPATH='src'
@@ -74,7 +81,14 @@ Remove-Item Env:\PYTHONPATH
 - completion/prompt tokens
 - token count source
 - decode tok/s, end-to-end tok/s
+- finish reason/truncated flag
 - usage raw payload
+
+Phase 1의 번역 토큰 기본값은 Phase 0 벤치마크용 `measurement.max_tokens`와
+분리되어 있으며 기본 1024 tokens/block이다. 필요하면 `--max-tokens`,
+`GLOSS_PHASE1_MAX_TOKENS`, 또는 config의 `phase1.text.max_tokens`로 조정한다.
+백엔드가 `finish_reason=length`를 반환하면 해당 block은 `truncated=true`로 기록되고
+stderr 경고 로그도 남는다.
 
 ## 현재 한계
 

@@ -6,7 +6,7 @@ import sys
 
 from gloss.backend.openai_client import BackendError, OpenAIChatClient
 from gloss.config import load_runtime_config
-from gloss.logging import log
+from gloss.log import log
 from gloss.metrics import MetricsRecorder
 from gloss.text.engine import TextEngine, TextEngineError
 from gloss.text.extractors import ExtractionError, extract_text_source
@@ -16,7 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the Gloss Phase 1 text engine.")
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--text", help="Translate an inline text block.")
-    source.add_argument("--file", type=Path, help="Translate a UTF-8 text or HTML file.")
+    source.add_argument("--file", type=Path, help="Translate a text or HTML file.")
     source.add_argument("--url", help="Fetch and translate a URL.")
     parser.add_argument("--config", type=Path, help="Config JSON path.")
     parser.add_argument("--env-file", type=Path, help="Env file path.")

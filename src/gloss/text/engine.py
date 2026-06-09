@@ -5,7 +5,7 @@ from typing import Iterable
 
 from gloss.backend.openai_client import GenerationResult, OpenAIChatClient
 from gloss.config import RuntimeConfig
-from gloss.logging import log
+from gloss.log import log
 from gloss.metrics import MetricsRecorder, new_request_id
 from gloss.text.extractors import ExtractedDocument
 
@@ -81,6 +81,15 @@ class TextEngine:
                 metrics=result,
             )
             blocks.append(block)
+            if result.truncated:
+                log(
+                    "translation block truncated",
+                    level="WARN",
+                    request_id=request_id,
+                    block=index,
+                    finish_reason=result.finish_reason,
+                    max_tokens=self.config.max_tokens,
+                )
             self.metrics.write(
                 {
                     "requestId": request_id,
@@ -94,6 +103,7 @@ class TextEngine:
                     "modelProfile": self.config.profile,
                     "model": self.config.model,
                     "backendBaseUrl": self.config.base_url,
+                    "maxTokens": self.config.max_tokens,
                     "sourceChars": len(source_text),
                     "translatedChars": len(block.translated_text),
                     "generation": asdict(result),
@@ -121,6 +131,8 @@ class TextEngine:
                 end_to_end_tokens_per_second=None,
                 chunks=0,
                 usage=None,
+                finish_reason=None,
+                truncated=False,
             )
 
         return self.client.complete(

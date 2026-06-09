@@ -11,6 +11,7 @@ from gloss.env import env_value, load_env_file
 DEFAULT_CONFIG_PATH = Path("phase0/config.example.json")
 DEFAULT_ENV_PATH = Path("phase0/.env")
 DEFAULT_PROFILES_PATH = Path("phase0/model-profiles.json")
+DEFAULT_PHASE1_MAX_TOKENS = 1024
 
 
 @dataclass(frozen=True)
@@ -161,10 +162,12 @@ def load_runtime_config(
     selected_max_tokens = int(
         first_defined(
             max_tokens,
-            env_value("GLOSS_PHASE1_MAX_TOKENS"),
-            _nested_get(profile_doc, "measurement", "max_tokens"),
-            _nested_get(config, "benchmarks", "max_tokens"),
-            default=512,
+            env_value("GLOSS_PHASE1_MAX_TOKENS", "GLOSS_TEXT_MAX_TOKENS"),
+            _nested_get(profile_doc, "phase1", "max_tokens"),
+            _nested_get(profile_doc, "translation", "max_tokens"),
+            _nested_get(config, "phase1", "text", "max_tokens"),
+            _nested_get(config, "phase1", "max_tokens"),
+            default=DEFAULT_PHASE1_MAX_TOKENS,
         )
     )
 

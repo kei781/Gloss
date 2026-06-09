@@ -42,8 +42,41 @@ class RuntimeConfigTest(unittest.TestCase):
 
         self.assertEqual(runtime.profile, "fallback")
         self.assertEqual(runtime.model, "phi-3.5-mini")
-        self.assertEqual(runtime.max_tokens, 64)
+        self.assertEqual(runtime.max_tokens, 1024)
         self.assertEqual(runtime.base_url, "http://127.0.0.1:11435/v1")
+
+    def test_phase1_max_tokens_can_be_configured_separately(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            profiles = root / "profiles.json"
+            config = root / "config.json"
+            profiles.write_text(
+                """
+                {
+                  "profiles": {
+                    "fallback": {
+                      "runtime_model": "phi-3.5-mini",
+                      "measurement": { "max_tokens": 64 }
+                    }
+                  }
+                }
+                """,
+                encoding="utf-8",
+            )
+            config.write_text(
+                """
+                {
+                  "active_model_profile": "fallback",
+                  "model_profiles_path": "profiles.json",
+                  "phase1": { "text": { "max_tokens": 1536 } }
+                }
+                """,
+                encoding="utf-8",
+            )
+
+            runtime = load_runtime_config(config_path=config, env_file=root / "missing.env")
+
+        self.assertEqual(runtime.max_tokens, 1536)
 
     def test_env_alias_profile_override(self) -> None:
         old_value = os.environ.get("GLOSS_ACTIVE_MODEL_PROFILE")
