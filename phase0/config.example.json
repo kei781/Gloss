@@ -1,17 +1,19 @@
 {
   "run_id": "2026-06-09-xplus",
+  "active_model_profile": "qwen3-4b",
+  "model_profiles_path": "phase0/model-profiles.json",
   "backend": {
     "name": "npurun",
-    "base_url": "http://127.0.0.1:8000/v1",
-    "api_key": "local"
-  },
-  "models": {
-    "text": "qwen3-text-small",
-    "vision": "qwen3-vl-4b"
+    "base_url": "http://127.0.0.1:11435/v1",
+    "api_key": "local",
+    "npurun_path": ".tools/npurun/npurun.exe",
+    "qnn_runtime_dir": ".venv-arm64/Lib/site-packages/onnxruntime_qnn",
+    "models_dir": ".models/npurun"
   },
   "benchmarks": {
     "runs": 3,
     "max_tokens": 128,
+    "output_dir": "phase0/runs/2026-06-09-xplus/npurun",
     "text_prompt": "다음 문장을 한국어로 자연스럽게 번역해줘: The moonlight fell softly over the old town.",
     "vision_prompt": "이미지에 보이는 외국어 텍스트만 한국어로 번역해줘."
   },

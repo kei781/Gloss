@@ -88,6 +88,7 @@ QAIRT SDK    (sdk.yaml not parseable; root: C:\agent\Gloss\.venv-arm64\Lib\site-
 
 | 항목 | 값 |
 |---|---|
+| 모델 프로파일 | `phi-3.5-mini` |
 | 모델 | phi-3.5-mini |
 | 양자화 | W4A16 |
 | 실행 명령 | `npurun run phi-3.5-mini ...`, `npurun bench phi-3.5-mini`, `npurun serve --model phi-3.5-mini` |
@@ -134,6 +135,7 @@ avg ttft_s: 0.08
 
 | 항목 | 값 |
 |---|---|
+| 모델 프로파일 | 미검증 |
 | 모델 | 미검증 |
 | 양자화 | 미검증 |
 | 이미지 샘플 | 미사용 |
@@ -203,6 +205,7 @@ Partial
 ### 다음 Phase에 넘길 결정
 
 - Phase 1 Text 엔진에서 사용할 백엔드: `npurun serve --model phi-3.5-mini`로 OpenAI 호환 HTTP 경로는 사용 가능.
+- 모델 교체 구성: 기본 목표 profile은 `qwen3-4b`, 검증된 fallback profile은 `phi-3.5-mini`.
 - Phase 2 Visual 온디맨드에서 사용할 경로: VLM bundle 확보 전까지 확정 불가.
 - 경량 OCR + 소형 LLM fallback 필요 여부: 필요 가능성 높음. 현재 검증된 NPU 경로는 텍스트 LLM뿐이다.
 
