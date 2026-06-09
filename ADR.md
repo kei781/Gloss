@@ -1,19 +1,21 @@
 # ADR — Gloss
 
-> **Gloss** — 가리킨 화면 텍스트를 Snapdragon NPU에서 바로 번역해 게임자막처럼 띄우는 온디바이스 오버레이. 로컬·프라이빗, CPU/GPU 안 씀.
+> **Gloss** — 가리킨 화면 텍스트를 Snapdragon NPU에서 바로 번역해 게임자막처럼 띄우는 온디바이스 오버레이. 로컬·프라이빗, 추론은 NPU 전담.
 
 각 결정은 MADR 형식(Status / Context / Decision / Consequences).
 
+외부 런타임·모델 빌드·OS 기능처럼 빠르게 변하는 전제는 Phase 0 검증 노트에 검증일, 버전, 실행 명령, 로그/스크린샷, 실패 조건을 남긴다. 검증 노트 없이 Accepted 결정을 본 구현 착수 근거로 쓰지 않는다.
+
 | 버전 | 작성일 | 작성자 |
 |---|---|---|
-| v0.3 | 2026-06-09 | 호크 (노상운) |
+| v0.3.1 | 2026-06-09 | 호크 (노상운) |
 
-> v0.3: 프로젝트명 **Gloss** 확정 + tagline 추가. (v0.2: ADR-001/003/009/010 갱신, ADR-012(모델 사이징)·013(Visual 2-경로)·014(실시간 자막 비목표) 추가.)
+> v0.3.1: NPU 검증 게이트 직접 증거화, CPU/GPU 보조 작업 범위 정리, 성공 기준 정량화. v0.3: 프로젝트명 **Gloss** 확정 + tagline 추가. (v0.2: ADR-001/003/009/010 갱신, ADR-012(모델 사이징)·013(Visual 2-경로)·014(실시간 자막 비목표) 추가.)
 
 ---
 
 ## ADR-001 — NPU 추론 백엔드: npurun (primary), NexaSDK / ONNX+QNN (alternatives). LiteRT·GGUF 런타임 기각
-**Status**: Accepted (Phase 0에서 재확인)
+**Status**: Accepted (Phase 0에서 직접 증거로 재확인)
 
 **Context**: PC(Windows ARM)의 NPU LLM 경로는 모바일과 다르다.
 - **GGUF 런타임**(Ollama/llama.cpp/LM Studio)은 ARM에서 CPU-only — NPU 미사용.
@@ -22,7 +24,7 @@
 
 **Decision**: 기본 백엔드는 **npurun(Genie)**. 대안은 **NexaSDK**(멀티모달 적재가 더 매끄러울 때)와 **ONNX Runtime + QNN EP**(폴백). 모두 **OpenAI 호환 엔드포인트로 추상화**해 설정으로 교체 가능하게 둔다. **LiteRT-LM·GGUF 런타임은 PC NPU 미지원이라 채택하지 않는다.**
 
-**Consequences**: 백엔드 교체가 설정 한 줄. per-token 디코드 속도는 libGenie 의존이라 백엔드를 바꿔도 동일. NexaSDK 채택 시 X Plus 게이팅 사전 검증 필수. LiteRT는 향후 Windows ARM NPU 지원이 오면 재평가(현재는 제외).
+**Consequences**: 백엔드 교체가 설정 한 줄. per-token 디코드 속도는 libGenie 의존이라 백엔드를 바꿔도 동일. NexaSDK 채택 시 X Plus 게이팅 사전 검증 필수. Phase 0에서는 백엔드/드라이버/모델 버전, 실행 명령, NPU 적재·실행 로그 또는 trace를 남긴다. LiteRT는 향후 Windows ARM NPU 지원이 오면 재평가(현재는 제외).
 
 ---
 
@@ -110,9 +112,9 @@
 
 **Context**: 앱 자체가 추론 호출 클라이언트라 TTFT·tok/s·토큰·레이턴시를 호출 경로에서 직접 확보 가능(백엔드 스크래핑 불필요). NPU 사용률은 Windows perf counter가 GPU와 같은 원리지만 counter set 이름이 비공개라 PDH로 읽기 까다롭고, ARM·신규 빌드라 불안정. 한편 "생성 중인데 NPU% 0"은 silent CPU fallback의 신호다.
 
-**Decision**: 핵심 메트릭은 **호출 경로 계측** + **psutil**(CPU%/RAM). NPU%는 PDH로 시도하되 실패 시 생략하고 **"tok/s 정상 + CPU 유휴"로 NPU 가동을 간접 입증**. NPU%를 읽을 수 있으면 **생성 중 0% = CPU fallback 경고**로 활용(FR-D6).
+**Decision**: 핵심 메트릭은 **호출 경로 계측** + **psutil**(CPU%/RAM). 제품 대시보드의 NPU%는 PDH로 시도하되 실패 시 생략하고 **"tok/s 정상 + CPU 유휴"를 보조 지표**로 노출한다. 단, Phase 0 게이트에서는 tok/s + CPU 유휴만으로 합격시키지 않고, NPU counter 또는 Genie/QNN/HTP 로그·벤더 샘플 출력·ETW/perf trace 같은 직접 증거를 요구한다. NPU%를 읽을 수 있으면 **생성 중 0% = CPU fallback 경고**로 활용(FR-D6).
 
-**Consequences**: 메트릭 대부분 무비용. NPU% 누락 리스크를 우회 지표로 흡수. 계측 훅은 Phase 1부터 심어 둠.
+**Consequences**: 메트릭 대부분 무비용. 제품 런타임에서는 NPU% 누락 리스크를 우회 지표로 흡수하되, 최초 게이트는 직접 증거로 닫는다. 계측 훅은 Phase 1부터 심어 둠.
 
 ---
 
@@ -132,7 +134,7 @@
 
 **Context**: 오버레이·핫키·캡처·대시보드를 한 앱에 통합하고 본인 PyQt6 경험을 활용. 백엔드(npurun/Nexa)는 프로세스 분리 + HTTP 결합이 교체성·관측성에 유리.
 
-**Decision**: 프론트는 **Python/PyQt6 단일 앱**(오버레이 + 대시보드 패널). 추론은 별도 백엔드 프로세스에 **OpenAI 호환 HTTP**로 요청. CPU/GPU는 캡처·렌더·계측만 담당.
+**Decision**: 프론트는 **Python/PyQt6 단일 앱**(오버레이 + 대시보드 패널). 추론은 별도 백엔드 프로세스에 **OpenAI 호환 HTTP**로 요청. CPU/GPU는 캡처·렌더·계측 및 선택적 경량 OCR fallback만 담당.
 
 **Consequences**: 단일 프로세스 GUI로 자원 절약. 백엔드 독립 재시작·교체 가능. ARM64 휠 의존성 관리 필요(R4).
 
@@ -145,7 +147,7 @@
 
 **Decision**: 이 기기에서는 **≤4B만** 사용. 짧은 번역(게임 대사 등)은 **소형(0.6B~1.7B)** 우선, 정확도가 필요한 긴 문학은 4B. **양자화(Q4)** 를 속도 레버로 사용. 12B+ 는 채택하지 않고 필요 시 **dGPU(RTX 5080) 기기**로 분리.
 
-**Consequences**: 체감 속도 확보, 목적(가볍고 빠른 온디바이스) 부합. 대형 모델 품질이 필요한 작업은 별도 장비로 위임. Phase 0 측정으로 사이즈 확정.
+**Consequences**: 체감 속도 확보, 목적(가볍고 빠른 온디바이스) 부합. 대형 모델 품질이 필요한 작업은 별도 장비로 위임. 본문의 tok/s 수치는 계획 가정이며, Phase 0 측정값으로 최종 사이즈와 레이턴시 예산을 확정한다.
 
 ---
 
@@ -156,7 +158,7 @@
 
 **Decision**: 기본은 **VLM 단일패스(Qwen3-VL-4B)**. 게임 응답성이 부족하면 **경량 OCR + 소형 LLM 경로**로 전환 가능하도록 인터페이스를 둔다(엔진 내부 교체 가능 구조).
 
-**Consequences**: 정확도와 속도 사이를 용례별로 택할 수 있음. 두 경로 유지 비용. 분리형은 OCR의 CPU 점유를 일부 감수(NFR-1과 트레이드오프).
+**Consequences**: 정확도와 속도 사이를 용례별로 택할 수 있음. 두 경로 유지 비용. 분리형은 OCR의 CPU 점유를 일부 감수(NFR-1과 트레이드오프)하므로, 이 경로를 켠 경우 CPU 점유와 VLM 대비 레이턴시 이득을 별도 측정한다.
 
 ---
 
@@ -167,4 +169,4 @@
 
 **Decision**: **실시간 흐르는 자막은 본 도구의 비목표**로 둔다. 영역 감시(FR-V3)는 **느린 전환(슬라이드·정지 자막)** 에 한정. 실시간 영상 자막이 필요하면 **Windows Live Captions**로 위임.
 
-**Consequences**: 달성 불가능한 목표를 제거해 범위·기대치 보호. 영상 자막 실시간성은 OS 기능에 의존.
+**Consequences**: 달성 불가능한 목표를 제거해 범위·기대치 보호. 영상 자막 실시간성은 OS 기능에 의존하며, Live Captions의 지원 언어·Windows 빌드·사용 가능 여부는 필요 시 별도 검증 노트에 남긴다.
