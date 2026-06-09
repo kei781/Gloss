@@ -1,9 +1,33 @@
 param(
+    [string]$EnvFile = ".\phase0\.env",
     [string]$OutputDir = ".\phase0\runs\latest",
     [int]$SampleSeconds = 5
 )
 
 $ErrorActionPreference = "Stop"
+
+. "$PSScriptRoot\common.ps1"
+
+$workspaceDir = (Get-Location).Path
+$envFilePath = Resolve-WorkspacePath -PathValue $EnvFile -ConfigDir $workspaceDir
+$loadedEnv = Load-EnvFile -Path $envFilePath
+if ($loadedEnv.Count -gt 0) {
+    log "loaded env file: $envFilePath"
+}
+
+if ($OutputDir -eq ".\phase0\runs\latest") {
+    $outputDirFromEnv = Get-EnvValue -Names @("GLOSS_PHASE0_OUTPUT_DIR")
+    if (-not [string]::IsNullOrWhiteSpace($outputDirFromEnv)) {
+        $OutputDir = $outputDirFromEnv
+    }
+}
+
+if ($SampleSeconds -eq 5) {
+    $sampleSecondsFromEnv = Get-EnvValue -Names @("GLOSS_PHASE0_SAMPLE_SECONDS")
+    if (-not [string]::IsNullOrWhiteSpace($sampleSecondsFromEnv)) {
+        $SampleSeconds = [int]$sampleSecondsFromEnv
+    }
+}
 
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
@@ -105,6 +129,6 @@ foreach ($path in $pathsToSample) {
 $samplePath = Join-Path $OutputDir "counter-sample.json"
 $sample | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 -Path $samplePath
 
-Write-Host "Wrote $environmentPath"
-Write-Host "Wrote $counterCandidatesPath"
-Write-Host "Wrote $samplePath"
+log "wrote $environmentPath"
+log "wrote $counterCandidatesPath"
+log "wrote $samplePath"

@@ -29,6 +29,8 @@
 | 작업 관리자 스크린샷 |  |
 | 백엔드 로그 |  |
 | ETW/perf trace |  |
+| env 파일 |  |
+| log 구현 | `scripts/phase0/phase0_common.py`, `scripts/phase0/common.ps1` |
 
 ## 텍스트 모델 측정
 

@@ -12,12 +12,13 @@ import base64
 import json
 import math
 import mimetypes
-import sys
 import time
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+from phase0_common import env_value, load_env_file, log
 
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8000/v1"
@@ -39,6 +40,11 @@ def parse_args() -> argparse.Namespace:
         "--config",
         type=Path,
         help="Phase 0 config JSON. Values can be overridden by CLI flags.",
+    )
+    parser.add_argument(
+        "--env-file",
+        type=Path,
+        help="Env file containing Phase 0 keys. Defaults to config env_file or phase0/.env.",
     )
     parser.add_argument(
         "--profile",
@@ -129,9 +135,11 @@ def load_profile(
     config: dict[str, Any],
     config_dir: Path,
 ) -> tuple[str | None, dict[str, Any]]:
-    profiles_path_value = config.get("model_profiles_path")
-    if profiles_path_value is None:
-        profiles_path_value = "phase0/model-profiles.json"
+    profiles_path_value = first_defined(
+        env_value("GLOSS_PHASE0_MODEL_PROFILES_PATH"),
+        config.get("model_profiles_path"),
+        default="phase0/model-profiles.json",
+    )
 
     profiles_path = resolve_existing_or_cwd(str(profiles_path_value), config_dir)
     if not profiles_path.exists():
@@ -142,6 +150,7 @@ def load_profile(
     profiles_doc = load_json(profiles_path)
     profile_name = first_defined(
         args.profile,
+        env_value("GLOSS_PHASE0_ACTIVE_MODEL_PROFILE", "GLOSS_ACTIVE_MODEL_PROFILE"),
         config.get("active_model_profile"),
         profiles_doc.get("default_profile"),
     )
@@ -167,10 +176,30 @@ def apply_config(args: argparse.Namespace) -> None:
         config_path = args.config.resolve()
         config = load_json(config_path)
         config_dir = config_path.parent
+
+    env_file_value = first_defined(
+        args.env_file,
+        env_value("GLOSS_PHASE0_ENV_FILE"),
+        config.get("env_file"),
+        default="phase0/.env",
+    )
+    env_file = resolve_existing_or_cwd(str(env_file_value), config_dir)
+    loaded_env = load_env_file(env_file)
+
+    if loaded_env:
+        args.env_file_loaded = str(env_file)
+    else:
+        args.env_file_loaded = None
+
+    if not args.config:
+        env_config = env_value("GLOSS_PHASE0_CONFIG")
+        if env_config:
+            config_path = resolve_existing_or_cwd(env_config, config_dir).resolve()
+            config = load_json(config_path)
+            config_dir = config_path.parent
+
+    if config or args.profile or env_value("GLOSS_PHASE0_ACTIVE_MODEL_PROFILE"):
         profile_name, profile = load_profile(args, config, config_dir)
-    elif args.profile:
-        temp_config = {"active_model_profile": args.profile}
-        profile_name, profile = load_profile(args, temp_config, config_dir)
 
     benchmarks = config.get("benchmarks") if isinstance(config.get("benchmarks"), dict) else {}
     measurement = (
@@ -190,11 +219,13 @@ def apply_config(args: argparse.Namespace) -> None:
 
     config_prompt = benchmarks.get("vision_prompt" if args.image else "text_prompt")
     output_dir = first_defined(
+        env_value("GLOSS_PHASE0_OUTPUT_DIR"),
         measurement.get("output_dir"),
         benchmarks.get("output_dir"),
-        f"phase0/runs/{config.get('run_id', 'manual')}",
+        f"phase0/runs/{env_value('GLOSS_PHASE0_RUN_ID') or config.get('run_id', 'manual')}",
     )
     output_file = first_defined(
+        env_value("GLOSS_PHASE0_OUTPUT_FILE"),
         measurement.get("output_file"),
         f"{sanitize_filename(profile_name or profile_model or legacy_model or 'manual')}.jsonl",
     )
@@ -203,6 +234,7 @@ def apply_config(args: argparse.Namespace) -> None:
     args.model_profile_status = profile.get("status")
     args.base_url = first_defined(
         args.base_url,
+        env_value("GLOSS_PHASE0_BASE_URL", "GLOSS_OPENAI_BASE_URL"),
         nested_get(profile, "serve", "base_url"),
         nested_get(profile, "openai", "base_url"),
         nested_get(config, "backend", "base_url"),
@@ -210,12 +242,19 @@ def apply_config(args: argparse.Namespace) -> None:
     )
     args.api_key = first_defined(
         args.api_key,
+        env_value("GLOSS_PHASE0_API_KEY", "OPENAI_API_KEY"),
         nested_get(config, "backend", "api_key"),
         default=DEFAULT_API_KEY,
     )
-    args.model = first_defined(args.model, profile_model, legacy_model)
+    args.model = first_defined(
+        args.model,
+        env_value("GLOSS_PHASE0_MODEL", "GLOSS_MODEL"),
+        profile_model,
+        legacy_model,
+    )
     args.prompt = first_defined(
         args.prompt,
+        env_value("GLOSS_PHASE0_PROMPT"),
         measurement.get("prompt"),
         config_prompt,
         default=DEFAULT_PROMPT,
@@ -223,6 +262,7 @@ def apply_config(args: argparse.Namespace) -> None:
     args.runs = int(
         first_defined(
             args.runs,
+            env_value("GLOSS_PHASE0_RUNS"),
             measurement.get("runs"),
             benchmarks.get("runs"),
             default=DEFAULT_RUNS,
@@ -231,17 +271,32 @@ def apply_config(args: argparse.Namespace) -> None:
     args.max_tokens = int(
         first_defined(
             args.max_tokens,
+            env_value("GLOSS_PHASE0_MAX_TOKENS"),
             measurement.get("max_tokens"),
             benchmarks.get("max_tokens"),
             default=DEFAULT_MAX_TOKENS,
         )
     )
     args.temperature = float(
-        first_defined(args.temperature, default=DEFAULT_TEMPERATURE)
+        first_defined(
+            args.temperature,
+            env_value("GLOSS_PHASE0_TEMPERATURE"),
+            default=DEFAULT_TEMPERATURE,
+        )
     )
-    args.timeout = float(first_defined(args.timeout, default=DEFAULT_TIMEOUT))
+    args.timeout = float(
+        first_defined(
+            args.timeout,
+            env_value("GLOSS_PHASE0_TIMEOUT"),
+            default=DEFAULT_TIMEOUT,
+        )
+    )
     args.chars_per_token = float(
-        first_defined(args.chars_per_token, default=DEFAULT_CHARS_PER_TOKEN)
+        first_defined(
+            args.chars_per_token,
+            env_value("GLOSS_PHASE0_CHARS_PER_TOKEN"),
+            default=DEFAULT_CHARS_PER_TOKEN,
+        )
     )
     if args.output is None:
         args.output = resolve_output_path(Path(str(output_dir)) / str(output_file), config_dir)
@@ -471,8 +526,8 @@ def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
 
 def print_summary(rows: list[dict[str, Any]]) -> None:
     successful = [row for row in rows if row.get("ok")]
-    print(f"runs: {len(rows)}")
-    print(f"successful: {len(successful)}")
+    log(f"runs: {len(rows)}")
+    log(f"successful: {len(successful)}")
     if not successful:
         return
 
@@ -488,16 +543,22 @@ def print_summary(rows: list[dict[str, Any]]) -> None:
     ]
     if tok_values:
         avg_tok = sum(tok_values) / len(tok_values)
-        print(f"avg tokens_per_second: {avg_tok:.2f}")
+        log(f"avg tokens_per_second: {avg_tok:.2f}")
     if ttft_values:
         avg_ttft = sum(ttft_values) / len(ttft_values)
-        print(f"avg ttft_s: {avg_ttft:.2f}")
+        log(f"avg ttft_s: {avg_ttft:.2f}")
 
 
 def main() -> int:
     args = parse_args()
     url = args.base_url.rstrip("/") + "/chat/completions"
     rows: list[dict[str, Any]] = []
+
+    if getattr(args, "env_file_loaded", None):
+        log(f"loaded env file: {args.env_file_loaded}")
+    log(f"profile: {getattr(args, 'model_profile', None) or 'manual'}")
+    log(f"model: {args.model}")
+    log(f"base_url: {args.base_url}")
 
     for index in range(1, args.runs + 1):
         started_wall = time.strftime("%Y-%m-%dT%H:%M:%S%z")
@@ -517,7 +578,7 @@ def main() -> int:
             )
             tps = result.get("tokens_per_second")
             tps_text = "n/a" if tps is None else f"{tps:.2f}"
-            print(f"run {index}: ok, tok/s={tps_text}")
+            log(f"run {index}: ok, tok/s={tps_text}")
         except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
             rows.append(
                 {
@@ -530,10 +591,10 @@ def main() -> int:
                     },
                 }
             )
-            print(f"run {index}: failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+            log(f"run {index}: failed: {type(exc).__name__}: {exc}", level="ERROR", error=True)
 
     write_jsonl(args.output, rows)
-    print(f"wrote: {args.output}")
+    log(f"wrote: {args.output}")
     print_summary(rows)
 
     return 0 if all(row.get("ok") for row in rows) else 1

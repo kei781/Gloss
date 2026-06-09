@@ -34,6 +34,8 @@ Partial 이유:
 | 작업 관리자 스크린샷 | 미수집 |
 | 백엔드 로그 | `phase0/runs/real-device/npurun/run-phi-3.5-mini.txt`, `bench-phi-3.5-mini.txt`, `serve-stderr.txt` |
 | ETW/perf trace | 미수집 |
+| env 파일 | `phase0/.env.example` 기준, 로컬 `phase0/.env`는 git ignore |
+| log 구현 | `scripts/phase0/phase0_common.py`, `scripts/phase0/common.ps1` |
 
 장치 요약:
 

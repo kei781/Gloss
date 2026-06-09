@@ -1,5 +1,6 @@
 {
   "run_id": "2026-06-09-xplus",
+  "env_file": "phase0/.env",
   "active_model_profile": "qwen3-4b",
   "model_profiles_path": "phase0/model-profiles.json",
   "backend": {
