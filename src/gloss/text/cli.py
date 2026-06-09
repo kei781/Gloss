@@ -29,6 +29,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--temperature", type=float, help="Sampling temperature.")
     parser.add_argument("--timeout", type=float, help="Backend timeout seconds.")
     parser.add_argument("--max-chars-per-block", type=int, default=1800)
+    parser.add_argument(
+        "--url-ca-bundle",
+        type=Path,
+        help="Custom CA bundle path for HTTPS URL fetches.",
+    )
+    parser.add_argument(
+        "--url-insecure-skip-verify",
+        action="store_true",
+        help="Skip HTTPS certificate verification for URL fetches.",
+    )
     parser.add_argument("--no-stream", action="store_true")
     parser.add_argument("--dry-run", action="store_true", help="Skip backend call.")
     parser.add_argument("--show-source", action="store_true")
@@ -41,6 +51,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
+        if args.url_insecure_skip_verify and args.url_ca_bundle:
+            raise ValueError(
+                "Use either --url-ca-bundle or --url-insecure-skip-verify, not both."
+            )
         config = load_runtime_config(
             config_path=args.config,
             env_file=args.env_file,
@@ -57,11 +71,19 @@ def main(argv: list[str] | None = None) -> int:
             log("loaded env file", path=str(config.env_file))
         if config.config_path:
             log("loaded config", path=str(config.config_path))
+        if args.url_insecure_skip_verify:
+            log(
+                "URL SSL verification disabled",
+                level="WARN",
+                reason="--url-insecure-skip-verify",
+            )
         document = extract_text_source(
             text=args.text,
             file=args.file,
             url=args.url,
             timeout_s=min(config.timeout_s, 60.0),
+            url_verify_ssl=not args.url_insecure_skip_verify,
+            url_ca_bundle=args.url_ca_bundle,
         )
         log(
             "source extracted",
