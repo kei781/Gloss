@@ -5,6 +5,7 @@ import unittest
 from gloss.text.engine import split_text_blocks
 from gloss.text.extractors import (
     ExtractionError,
+    build_url_ssl_context,
     extract_readable_text_from_html,
     extract_text_source,
 )
@@ -60,6 +61,19 @@ class TextExtractionTest(unittest.TestCase):
 
             with self.assertRaises(ExtractionError):
                 extract_text_source(file=path)
+
+    def test_url_ssl_context_can_skip_verification(self) -> None:
+        context = build_url_ssl_context(verify_ssl=False)
+
+        self.assertIsNotNone(context)
+        self.assertFalse(context.check_hostname)
+
+    def test_url_ssl_context_reports_missing_ca_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "missing.pem"
+
+            with self.assertRaises(ExtractionError):
+                build_url_ssl_context(ca_bundle=path)
 
     def test_split_text_blocks_respects_limit(self) -> None:
         text = "A" * 20 + "\n\n" + "B" * 20 + "\n\n" + "C" * 20

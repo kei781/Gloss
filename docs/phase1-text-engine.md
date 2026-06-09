@@ -56,6 +56,26 @@ $env:PYTHONPATH='src'
 Remove-Item Env:\PYTHONPATH
 ```
 
+Windows/ARM64 Python 환경에서 사설 인증서 체인 때문에 HTTPS URL fetch가 실패하면
+신뢰할 수 있는 테스트 URL에 한해 인증서 검증을 생략할 수 있다.
+
+```powershell
+.\.venv-arm64\Scripts\gloss-text.exe `
+  --profile phi-3.5-mini `
+  --url "https://ncode.syosetu.com/n1976ey/" `
+  --url-insecure-skip-verify `
+  --output .\runs\phase1\url-live.md
+```
+
+조직/프록시의 CA bundle을 알고 있다면 검증 생략 대신 `--url-ca-bundle`을 사용한다.
+
+```powershell
+.\.venv-arm64\Scripts\gloss-text.exe `
+  --profile phi-3.5-mini `
+  --url "https://example.com/story" `
+  --url-ca-bundle .\certs\corp-root.pem
+```
+
 ## Dry Run
 
 백엔드 없이 추출/분할/리더 출력만 확인한다.
@@ -69,6 +89,21 @@ $env:PYTHONPATH='src'
   --show-source
 Remove-Item Env:\PYTHONPATH
 ```
+
+## 샘플 입력
+
+실기 확인용 샘플은 `samples/phase1`에 둔다.
+
+```powershell
+.\.venv-arm64\Scripts\gloss-text.exe `
+  --profile phi-3.5-mini `
+  --file .\samples\phase1\long-text.txt `
+  --output .\runs\phase1\long-text-live.md
+```
+
+`cp949-korean.txt`와 `euc-kr-korean.txt`는 파일 인코딩 확인용이고,
+`sample-page.html`은 HTML 본문 추출 확인용이다. `invalid-encoding.txt`는
+스택트레이스 없이 깔끔한 에러가 나는지 확인할 때만 사용한다.
 
 ## 메트릭
 

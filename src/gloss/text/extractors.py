@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
 import re
+import ssl
 from typing import Literal
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -31,6 +32,8 @@ def extract_text_source(
     file: Path | None = None,
     url: str | None = None,
     timeout_s: float = 30.0,
+    url_verify_ssl: bool = True,
+    url_ca_bundle: Path | None = None,
 ) -> ExtractedDocument:
     provided = [value is not None for value in (text, file, url)]
     if sum(provided) != 1:
@@ -51,7 +54,12 @@ def extract_text_source(
         return ExtractedDocument("file", str(file), title, body)
 
     assert url is not None
-    html = fetch_url(url, timeout_s=timeout_s)
+    html = fetch_url(
+        url,
+        timeout_s=timeout_s,
+        verify_ssl=url_verify_ssl,
+        ca_bundle=url_ca_bundle,
+    )
     title, body = extract_readable_text_from_html(html)
     return ExtractedDocument("url", url, title, body)
 
@@ -72,7 +80,13 @@ def read_text_file(path: Path) -> str:
     ) from last_decode_error
 
 
-def fetch_url(url: str, timeout_s: float) -> str:
+def fetch_url(
+    url: str,
+    timeout_s: float,
+    *,
+    verify_ssl: bool = True,
+    ca_bundle: Path | None = None,
+) -> str:
     request = Request(
         url,
         headers={
@@ -81,11 +95,29 @@ def fetch_url(url: str, timeout_s: float) -> str:
         method="GET",
     )
     try:
-        with urlopen(request, timeout=timeout_s) as response:
+        ssl_context = build_url_ssl_context(
+            verify_ssl=verify_ssl,
+            ca_bundle=ca_bundle,
+        )
+        with urlopen(request, timeout=timeout_s, context=ssl_context) as response:
             charset = response.headers.get_content_charset() or "utf-8"
             return response.read().decode(charset, errors="replace")
     except (HTTPError, URLError, TimeoutError, OSError) as exc:
         raise ExtractionError(f"URL fetch failed: {exc}") from exc
+
+
+def build_url_ssl_context(
+    *,
+    verify_ssl: bool = True,
+    ca_bundle: Path | None = None,
+) -> ssl.SSLContext | None:
+    if ca_bundle is not None and not ca_bundle.exists():
+        raise ExtractionError(f"URL CA bundle not found: {ca_bundle}")
+    if not verify_ssl:
+        return ssl._create_unverified_context()
+    if ca_bundle is not None:
+        return ssl.create_default_context(cafile=str(ca_bundle))
+    return None
 
 
 def extract_readable_text_from_html(html: str) -> tuple[str | None, str]:
