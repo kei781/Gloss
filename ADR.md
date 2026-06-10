@@ -8,9 +8,9 @@
 
 | 버전 | 작성일 | 작성자 |
 |---|---|---|
-| v0.3.3 | 2026-06-09 | 호크 (노상운) |
+| v0.3.4 | 2026-06-10 | 호크 (노상운) |
 
-> v0.3.3: Phase 0 디렉토리 구조, `log()` 단일 출력 계약, env 기반 key/model 관리 추가. v0.3.2: 모델 프로파일 기반 교체 구조 추가. v0.3.1: NPU 검증 게이트 직접 증거화, CPU/GPU 보조 작업 범위 정리, 성공 기준 정량화. v0.3: 프로젝트명 **Gloss** 확정 + tagline 추가. (v0.2: ADR-001/003/009/010 갱신, ADR-012(모델 사이징)·013(Visual 2-경로)·014(실시간 자막 비목표) 추가.)
+> v0.3.4: ADR-016(경량 OCR로 Windows.Media.Ocr 채택) 추가. v0.3.3: Phase 0 디렉토리 구조, `log()` 단일 출력 계약, env 기반 key/model 관리 추가. v0.3.2: 모델 프로파일 기반 교체 구조 추가. v0.3.1: NPU 검증 게이트 직접 증거화, CPU/GPU 보조 작업 범위 정리, 성공 기준 정량화. v0.3: 프로젝트명 **Gloss** 확정 + tagline 추가. (v0.2: ADR-001/003/009/010 갱신, ADR-012(모델 사이징)·013(Visual 2-경로)·014(실시간 자막 비목표) 추가.)
 
 ---
 
@@ -181,3 +181,14 @@
 **Decision**: 모든 스크립트 출력은 각 런타임의 공통 `log()` 함수를 통과한다. Phase 0의 Python 로그는 `scripts/phase0/phase0_common.py`, PowerShell 로그는 `scripts/phase0/common.ps1`이 담당한다. 공유 기본값은 config/profile에 두고, API key, npurun/QNN/model path 같은 머신별 값과 endpoint/profile/model/output override만 env에서 우선 관리한다. 실제 `phase0/.env`는 git ignore하고, `phase0/.env.example`만 버전 관리한다.
 
 **Consequences**: 로그 수집 방식을 바꿀 때 공통 `log()`만 수정하면 된다. 모델 교체와 장비별 경로 변경은 env/profile 수정으로 처리한다. 단, Python/PowerShell 런타임별 `log()` 구현은 각각 존재하므로 제품 본 구현에서는 `src/gloss/logging/`으로 한 번 더 통합한다.
+
+---
+
+## ADR-016 — 경량 OCR: Windows.Media.Ocr (OS 내장). Tesseract·외부 OCR 모델 기각
+**Status**: Accepted (Phase 3 실기에서 en-US/ko 확인, ja는 언어팩 설치 후 검증)
+
+**Context**: ADR-013의 "경량 OCR + 소형 LLM" 경로와 영역 감시(FR-V3)는 자동 OCR이 필요하다. VLM bundle은 미확보 상태(Phase 0 노트). 후보: Tesseract(ARM64 빌드/배포 부담, 한국어·일본어 품질 편차), PaddleOCR 등 모델 기반(ARM64 휠·모델 관리 부담, R4), **Windows.Media.Ocr**(Windows 10+ 내장 WinRT API, 언어팩 단위 설치, 무의존성).
+
+**Decision**: 경량 OCR은 **Windows.Media.Ocr**을 채택한다. PowerShell WinRT 헬퍼(`scripts/phase3/ocr_image_text.ps1`) + Python 래퍼(`gloss.visual.ocr.WindowsOcr`)로 캡처 PNG를 인식한다. OCR은 **CPU helper**로 NFR-1의 명시적 예외이며, 번역 LLM은 그대로 NPU 백엔드를 쓴다. `ja`/`zh` 계열은 OCR이 단어 사이에 공백을 넣으므로 래퍼가 줄 단위로 공백을 제거한다.
+
+**Consequences**: 외부 바이너리·모델 배포 없이 OCR 확보, ARM64 휠 리스크(R4) 회피. 단 인식 언어가 **설치된 언어팩의 OCR 기능**에 종속된다(실기 현재 en-US/ko만 — ja는 `Add-WindowsCapability -Online -Name "Language.OCR~~~ja-JP~0.0.1.0"` 필요, 관리자 권한). 스타일라이즈드 게임 폰트 인식률은 VLM 대비 낮을 수 있으며, VLM bundle 확보 시 같은 엔진 계약에 VLM 경로를 연결해 비교한다(ADR-013). OCR 호출당 PowerShell 프로세스 기동 비용(수백 ms)은 느린 전환 감시 용례에서는 허용 범위다.
