@@ -11,6 +11,7 @@ dependencies = []
 
 [project.scripts]
 gloss-text = "gloss.text.cli:main"
+gloss-visual = "gloss.visual.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
