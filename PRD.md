@@ -4,9 +4,9 @@
 
 | 항목 | 값 |
 |---|---|
-| 버전 | v0.3.1 |
+| 버전 | v0.3.3 |
 | 작성일 | 2026-06-09 |
-| 변경 | v0.3.1: NPU 검증 게이트 직접 증거화, CPU/GPU 보조 작업 범위 정리, 성공 기준 정량화. (v0.3: 프로젝트명 **Gloss** 확정 + tagline 추가. v0.2: 백엔드·모델 평가 반영, 모델 사이징·Visual 2-경로·유튜브 비목표화) |
+| 변경 | v0.3.3: Phase 0 디렉토리 구조, `log()` 단일 출력 계약, env 기반 key/model 관리 추가. v0.3.2: 모델 프로파일 기반 교체 구조 추가. v0.3.1: NPU 검증 게이트 직접 증거화, CPU/GPU 보조 작업 범위 정리, 성공 기준 정량화. (v0.3: 프로젝트명 **Gloss** 확정 + tagline 추가. v0.2: 백엔드·모델 평가 반영, 모델 사이징·Visual 2-경로·유튜브 비목표화) |
 | 작성자 | 호크 (노상운) |
 | 상태 | Draft — **Phase 0 검증 통과 전 본 구현 착수 금지** |
 | 대상 플랫폼 | Windows 11 on ARM64 (Snapdragon X Plus / X1P-42-100 / 32GB) |
@@ -76,7 +76,7 @@
 - **FR-D2 추론 메트릭**: 프리필 TTFT, 프리필 tok/s, 디코드 tok/s(실시간 그래프), 토큰 in/out, end-to-end 레이턴시, 누적 토큰·요청수·에러수.
 - **FR-D3 시스템**: CPU% / RAM (psutil). **CPU 유휴 = NPU 가동의 보조 증거**로 노출 (단독 판정 근거 아님, ADR-009).
 - **FR-D4 NPU%(선택)**: 제품 대시보드에서는 PDH perf counter로 시도. 불가 시 생략하고 tok/s + CPU 유휴로 대체. 단, Phase 0 검증 게이트는 별도의 직접 증거를 요구한다. (ADR-009)
-- **FR-D5 모델 셀렉터(선택)**: 드롭다운 → 언로드 → 적재(수초 로딩 상태 표시). instant 아님. 사이즈 티어(빠른 소형 ↔ 품질 4B) 전환도 겸함. (ADR-010)
+- **FR-D5 모델 셀렉터(선택)**: 드롭다운 → 언로드 → 적재(수초 로딩 상태 표시). instant 아님. 사이즈 티어(빠른 소형 ↔ 품질 4B) 전환도 겸함. 선택지는 모델 프로파일 목록을 기준으로 구성한다. (ADR-010)
 - **FR-D6 silent CPU fallback 감지**: NPU%를 읽을 수 있는 환경에서 생성 중 NPU% 0이면 "CPU fallback 중" 경고 노출. NPU%를 못 읽으면 백엔드 로그/trace 기반 검증 결과를 함께 표시한다. (ADR-009)
 
 > 모델 사이징: Visual 기본 **Qwen3-VL-4B**(필요 시 다운시프트), Text 짧은 번역은 **소형(≤1.7B)** 우선. 디코드 속도가 모델 크기에 반비례하므로 용례별로 사이즈를 분리한다. (ADR-012)
@@ -104,6 +104,10 @@
 
 - **Phase 0 — NPU 검증 게이트 (선결, 코드 거의 없음)**
   - 노트북 X Plus에서 백엔드로 Qwen3-VL-4B·소형 텍스트 모델이 **실제로 NPU에 적재·가동**되는지 확인.
+  - 검증 절차와 산출물은 `phase0/README.md`와 `phase0/verification-note-template.md`를 기준으로 남긴다.
+  - Phase 0 산출물에는 `phase0/directory-structure.md`의 전체 디렉토리 구조 설계와 이번 수정 내역을 포함한다.
+  - 스크립트 로그는 공통 `log()` 함수만 통과하고, 주요 key/base URL/model/profile/path는 env(`phase0/.env`, 예시는 `.env.example`)로 관리한다.
+  - 모델 후보는 `phase0/model-profiles.json`의 profile로 관리하고, 기본 목표는 `qwen3-4b`로 둔다.
   - **검증 산출물**: 검증일, OS/드라이버/백엔드/모델 버전, 실행 명령, 로그/스크린샷, tok/s, CPU/RAM, NPU 사용 증거를 Phase 0 검증 노트로 남긴다.
   - **합격 기준**: ~4B 모델이 **> 5 tok/s** AND NPU 사용의 직접 증거 1개 이상.
     - 작업관리자/PDH counter가 읽히면 **NPU% > 0** 필수.

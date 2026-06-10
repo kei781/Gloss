@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.env
+phase0/.env
+phase0/*.local.env
+.downloads/
+.models/
+.tools/
+.venv-arm64/
+phase0/runs/
