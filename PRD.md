@@ -4,9 +4,9 @@
 
 | 항목 | 값 |
 |---|---|
-| 버전 | v0.3.3 |
-| 작성일 | 2026-06-09 |
-| 변경 | v0.3.3: Phase 0 디렉토리 구조, `log()` 단일 출력 계약, env 기반 key/model 관리 추가. v0.3.2: 모델 프로파일 기반 교체 구조 추가. v0.3.1: NPU 검증 게이트 직접 증거화, CPU/GPU 보조 작업 범위 정리, 성공 기준 정량화. (v0.3: 프로젝트명 **Gloss** 확정 + tagline 추가. v0.2: 백엔드·모델 평가 반영, 모델 사이징·Visual 2-경로·유튜브 비목표화) |
+| 버전 | v0.3.4 |
+| 작성일 | 2026-06-10 |
+| 변경 | v0.3.4: Phase 3 영역 감시 산출물 연결, 경량 OCR(Windows.Media.Ocr, ADR-016) 채택. v0.3.3: Phase 0 디렉토리 구조, `log()` 단일 출력 계약, env 기반 key/model 관리 추가. v0.3.2: 모델 프로파일 기반 교체 구조 추가. v0.3.1: NPU 검증 게이트 직접 증거화, CPU/GPU 보조 작업 범위 정리, 성공 기준 정량화. (v0.3: 프로젝트명 **Gloss** 확정 + tagline 추가. v0.2: 백엔드·모델 평가 반영, 모델 사이징·Visual 2-경로·유튜브 비목표화) |
 | 작성자 | 호크 (노상운) |
 | 상태 | Draft — **Phase 0 검증 통과 전 본 구현 착수 금지** |
 | 대상 플랫폼 | Windows 11 on ARM64 (Snapdragon X Plus / X1P-42-100 / 32GB) |
@@ -121,6 +121,8 @@
 - **Phase 1 — Text 엔진**: OCR 불확실성 없어 결과물 가장 빨리. URL→추출→번역→리더. (FR-T1, FR-T4) — *호출 경로 계측 훅을 여기서부터 심는다.*
 - **Phase 2 — Visual 온디맨드**: WGC 캡처 → VLM(또는 OCR+소형 LLM) → 오버레이. (FR-V1, FR-V2, FR-V5, FR-V6)
 - **Phase 3 — 영역 감시**: diff 기반 continuous(느린 전환 한정). (FR-V3)
+  - 실행/한계는 `docs/phase3-region-watch.md`. 자동 텍스트 추출은 경량 OCR(Windows.Media.Ocr, ADR-016)을 쓰고, OCR 텍스트가 직전과 같으면 재번역하지 않는다.
+  - OCR은 CPU helper(NFR-1 예외)이며, 사용 언어는 설치된 Windows 언어팩 OCR에 종속(일본어는 별도 설치).
 - **Phase 4 — 대시보드**: Phase 1부터 심어둔 계측 훅 가시화 + psutil + fallback 감지. (FR-D1~FR-D3, FR-D6)
 - **Phase 5 — 선택 기능**: NPU%, 모델 셀렉터, PDF/스캔 폴백, 페이지네이션. (FR-D4, FR-D5, FR-T2, FR-T3)
 
