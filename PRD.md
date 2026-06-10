@@ -4,9 +4,9 @@
 
 | 항목 | 값 |
 |---|---|
-| 버전 | v0.3.4 |
+| 버전 | v0.3.5 |
 | 작성일 | 2026-06-10 |
-| 변경 | v0.3.4: Phase 3 영역 감시 산출물 연결, 경량 OCR(Windows.Media.Ocr, ADR-016) 채택. v0.3.3: Phase 0 디렉토리 구조, `log()` 단일 출력 계약, env 기반 key/model 관리 추가. v0.3.2: 모델 프로파일 기반 교체 구조 추가. v0.3.1: NPU 검증 게이트 직접 증거화, CPU/GPU 보조 작업 범위 정리, 성공 기준 정량화. (v0.3: 프로젝트명 **Gloss** 확정 + tagline 추가. v0.2: 백엔드·모델 평가 반영, 모델 사이징·Visual 2-경로·유튜브 비목표화) |
+| 변경 | v0.3.5: Phase 4 대시보드(CLI 1차) 연결, FR-D3를 psutil에서 Win32 직접 호출로 갱신(ADR-017). v0.3.4: Phase 3 영역 감시 산출물 연결, 경량 OCR(Windows.Media.Ocr, ADR-016) 채택. v0.3.3: Phase 0 디렉토리 구조, `log()` 단일 출력 계약, env 기반 key/model 관리 추가. v0.3.2: 모델 프로파일 기반 교체 구조 추가. v0.3.1: NPU 검증 게이트 직접 증거화, CPU/GPU 보조 작업 범위 정리, 성공 기준 정량화. (v0.3: 프로젝트명 **Gloss** 확정 + tagline 추가. v0.2: 백엔드·모델 평가 반영, 모델 사이징·Visual 2-경로·유튜브 비목표화) |
 | 작성자 | 호크 (노상운) |
 | 상태 | Draft — **Phase 0 검증 통과 전 본 구현 착수 금지** |
 | 대상 플랫폼 | Windows 11 on ARM64 (Snapdragon X Plus / X1P-42-100 / 32GB) |
@@ -74,10 +74,10 @@
 ### 5.3 대시보드
 - **FR-D1 모델 정보**: 적재 모델명·양자화·컨텍스트 길이·백엔드·엔드포인트·업타임.
 - **FR-D2 추론 메트릭**: 프리필 TTFT, 프리필 tok/s, 디코드 tok/s(실시간 그래프), 토큰 in/out, end-to-end 레이턴시, 누적 토큰·요청수·에러수.
-- **FR-D3 시스템**: CPU% / RAM (psutil). **CPU 유휴 = NPU 가동의 보조 증거**로 노출 (단독 판정 근거 아님, ADR-009).
+- **FR-D3 시스템**: CPU% / RAM (Win32 API 직접 호출 — ctypes, ADR-017; psutil 불요). **CPU 유휴 = NPU 가동의 보조 증거**로 노출 (단독 판정 근거 아님, ADR-009).
 - **FR-D4 NPU%(선택)**: 제품 대시보드에서는 PDH perf counter로 시도. 불가 시 생략하고 tok/s + CPU 유휴로 대체. 단, Phase 0 검증 게이트는 별도의 직접 증거를 요구한다. (ADR-009)
 - **FR-D5 모델 셀렉터(선택)**: 드롭다운 → 언로드 → 적재(수초 로딩 상태 표시). instant 아님. 사이즈 티어(빠른 소형 ↔ 품질 4B) 전환도 겸함. 선택지는 모델 프로파일 목록을 기준으로 구성한다. (ADR-010)
-- **FR-D6 silent CPU fallback 감지**: NPU%를 읽을 수 있는 환경에서 생성 중 NPU% 0이면 "CPU fallback 중" 경고 노출. NPU%를 못 읽으면 백엔드 로그/trace 기반 검증 결과를 함께 표시한다. (ADR-009)
+- **FR-D6 silent CPU fallback 감지**: NPU%를 읽을 수 있는 환경에서 생성 중 NPU% 0이면 "CPU fallback 중" 경고 노출. NPU%를 못 읽으면 백엔드 로그/trace 기반 검증 결과를 함께 표시한다. Phase 4(1차)는 생성 구간 평균 CPU% ≥ 임계값(기본 65%) 휴리스틱을 보조 증거 경고로 제공하고(`gloss-dashboard`), NPU counter 직접 감지는 Phase 5 FR-D4 연결 시 제공한다. (ADR-009)
 
 > 모델 사이징: Visual 기본 **Qwen3-VL-4B**(필요 시 다운시프트), Text 짧은 번역은 **소형(≤1.7B)** 우선. 디코드 속도가 모델 크기에 반비례하므로 용례별로 사이즈를 분리한다. (ADR-012)
 
@@ -123,7 +123,9 @@
 - **Phase 3 — 영역 감시**: diff 기반 continuous(느린 전환 한정). (FR-V3)
   - 실행/한계는 `docs/phase3-region-watch.md`. 자동 텍스트 추출은 경량 OCR(Windows.Media.Ocr, ADR-016)을 쓰고, OCR 텍스트가 직전과 같으면 재번역하지 않는다.
   - OCR은 CPU helper(NFR-1 예외)이며, 사용 언어는 설치된 Windows 언어팩 OCR에 종속(일본어는 별도 설치).
-- **Phase 4 — 대시보드**: Phase 1부터 심어둔 계측 훅 가시화 + psutil + fallback 감지. (FR-D1~FR-D3, FR-D6)
+- **Phase 4 — 대시보드**: Phase 1부터 심어둔 계측 훅 가시화 + 시스템 샘플러(ADR-017) + fallback 감지. (FR-D1~FR-D3, FR-D6)
+  - 1차는 CLI(`gloss-dashboard`, `docs/phase4-dashboard.md`) — 요약(`--once`)과 라이브 tail. PyQt6 패널은 같은 집계 모듈 위에 본 구현에서 올린다.
+  - FR-D6은 생성 구간 평균 CPU% 휴리스틱(보조 증거)으로 1차 제공, NPU counter 직접 감지는 Phase 5 FR-D4에서 연결.
 - **Phase 5 — 선택 기능**: NPU%, 모델 셀렉터, PDF/스캔 폴백, 페이지네이션. (FR-D4, FR-D5, FR-T2, FR-T3)
 
 > 각 Phase 종료 시 커밋.
