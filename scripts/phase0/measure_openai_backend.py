@@ -2,7 +2,8 @@
 """Measure an OpenAI-compatible local backend for Phase 0 validation.
 
 The script intentionally uses only the Python standard library so it can run on
-a fresh Windows ARM64 machine without installing packages.
+a fresh Windows machine without installing packages. It is backend-agnostic and
+targets any OpenAI-compatible endpoint (e.g. OpenVINO Model Server on Intel NPU).
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from urllib.request import Request, urlopen
 from phase0_common import env_value, load_env_file, log
 
 
-DEFAULT_BASE_URL = "http://127.0.0.1:8000/v1"
+DEFAULT_BASE_URL = "http://127.0.0.1:8000/v3"
 DEFAULT_API_KEY = "local"
 DEFAULT_PROMPT = (
     "Translate this sentence into natural Korean and output only the "

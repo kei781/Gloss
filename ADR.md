@@ -1,6 +1,6 @@
 # ADR — Gloss
 
-> **Gloss** — 가리킨 화면 텍스트를 Snapdragon NPU에서 바로 번역해 게임자막처럼 띄우는 온디바이스 오버레이. 로컬·프라이빗, 추론은 NPU 전담.
+> **Gloss** — 가리킨 화면 텍스트를 Intel NPU에서 바로 번역해 게임자막처럼 띄우는 온디바이스 오버레이. 로컬·프라이빗, 추론은 NPU 전담.
 
 각 결정은 MADR 형식(Status / Context / Decision / Consequences).
 
@@ -8,14 +8,16 @@
 
 | 버전 | 작성일 | 작성자 |
 |---|---|---|
-| v0.3.3 | 2026-06-09 | 호크 (노상운) |
+| v0.4.0 | 2026-06-20 | 호크 (노상운) |
 
-> v0.3.3: Phase 0 디렉토리 구조, `log()` 단일 출력 계약, env 기반 key/model 관리 추가. v0.3.2: 모델 프로파일 기반 교체 구조 추가. v0.3.1: NPU 검증 게이트 직접 증거화, CPU/GPU 보조 작업 범위 정리, 성공 기준 정량화. v0.3: 프로젝트명 **Gloss** 확정 + tagline 추가. (v0.2: ADR-001/003/009/010 갱신, ADR-012(모델 사이징)·013(Visual 2-경로)·014(실시간 자막 비목표) 추가.)
+> v0.4.0: 기기 변경(Snapdragon X Plus → Intel Core Ultra 358H). ADR-001(Hexagon/npurun) **Deprecated** 처리, **ADR-016**(Intel NPU 추론 백엔드: OpenVINO Model Server) 추가. ADR-012를 Intel NPU(OpenVINO) 전제로 갱신. v0.3.3: Phase 0 디렉토리 구조, `log()` 단일 출력 계약, env 기반 key/model 관리 추가. v0.3.2: 모델 프로파일 기반 교체 구조 추가. v0.3.1: NPU 검증 게이트 직접 증거화, CPU/GPU 보조 작업 범위 정리, 성공 기준 정량화. v0.3: 프로젝트명 **Gloss** 확정 + tagline 추가. (v0.2: ADR-001/003/009/010 갱신, ADR-012(모델 사이징)·013(Visual 2-경로)·014(실시간 자막 비목표) 추가.)
 
 ---
 
 ## ADR-001 — NPU 추론 백엔드: npurun (primary), NexaSDK / ONNX+QNN (alternatives). LiteRT·GGUF 런타임 기각
-**Status**: Accepted (Phase 0에서 직접 증거로 재확인)
+**Status**: ~~Accepted~~ → **Deprecated (2026-06-20, ADR-016으로 대체)**
+
+> **Deprecation note**: 이 결정은 Snapdragon X Plus(Qualcomm Hexagon NPU) 전제다. 기기가 Intel Core Ultra 358H(Intel AI Boost NPU)로 변경되어 npurun/Genie/QNN/HTP 경로는 더 이상 동작하지 않는다. Intel NPU 추론 백엔드는 **ADR-016**(OpenVINO Model Server) 참조. 이 ADR은 Hexagon 시절 의사결정 기록으로만 보존한다.
 
 **Context**: PC(Windows ARM)의 NPU LLM 경로는 모바일과 다르다.
 - **GGUF 런타임**(Ollama/llama.cpp/LM Studio)은 ARM에서 CPU-only — NPU 미사용.
@@ -70,7 +72,7 @@
 
 **Decision**: 캡처는 **WGC**로 통일.
 
-**Consequences**: 게임·유튜브 모두 정상 캡처. WGC는 ARM64 네이티브 WinRT라 호출 바인딩 필요(Python: winrt/pywinrt, 또는 .NET).
+**Consequences**: 게임·유튜브 모두 정상 캡처. WGC는 네이티브 WinRT라 호출 바인딩 필요(Python: winrt/pywinrt, 또는 .NET).
 
 ---
 
@@ -92,7 +94,7 @@
 
 **Decision**: PyQt6 프레임리스 창 + `WA_TranslucentBackground` + `WindowStaysOnTopHint` + `WA_TransparentForMouseEvents`(클릭 통과). 고정 출력 rect에 반투명 QWidget + QLabel.
 
-**Consequences**: 기존 경험 재사용. ARM64 PyQt6 휠 확인 필요(R4). 불가 시 .NET WPF layered window로 대안.
+**Consequences**: 기존 경험 재사용. x64 PyQt6 휠 확인(R4, ARM64 대비 리스크 낮음). 불가 시 .NET WPF layered window로 대안.
 
 ---
 
@@ -132,18 +134,18 @@
 ## ADR-011 — 구현 스택: Python + PyQt6, 백엔드는 OpenAI 호환 HTTP로 결합
 **Status**: Accepted
 
-**Context**: 오버레이·핫키·캡처·대시보드를 한 앱에 통합하고 본인 PyQt6 경험을 활용. 백엔드(npurun/Nexa)는 프로세스 분리 + HTTP 결합이 교체성·관측성에 유리.
+**Context**: 오버레이·핫키·캡처·대시보드를 한 앱에 통합하고 본인 PyQt6 경험을 활용. 백엔드(OVMS/OpenVINO)는 프로세스 분리 + HTTP 결합이 교체성·관측성에 유리.
 
 **Decision**: 프론트는 **Python/PyQt6 단일 앱**(오버레이 + 대시보드 패널). 추론은 별도 백엔드 프로세스에 **OpenAI 호환 HTTP**로 요청. CPU/GPU는 캡처·렌더·계측 및 선택적 경량 OCR fallback만 담당.
 
-**Consequences**: 단일 프로세스 GUI로 자원 절약. 백엔드 독립 재시작·교체 가능. ARM64 휠 의존성 관리 필요(R4).
+**Consequences**: 단일 프로세스 GUI로 자원 절약. 백엔드 독립 재시작·교체 가능. x64 휠 의존성 관리(R4).
 
 ---
 
 ## ADR-012 — 모델 사이징 정책: ≤4B, 용례별 우선 소형. "클수록 좋다" 기각
-**Status**: Accepted
+**Status**: Accepted (2026-06-20 Intel NPU 전제로 갱신; ≤4B 결정 자체는 유지)
 
-**Context**: 디코드는 **메모리 대역폭 바운드**라 속도 ≈ 대역폭 ÷ (모델 토큰당 바이트). RAM 용량·연산유닛으론 안 빨라지고, 모델 크기에 거의 반비례한다(4B Q4 ~15 tok/s, 12B Q4 ~5~6 tok/s). Snapdragon X NPU 생태계는 **~4B 파라미터 예산**이 실효 한계. 번역은 12B의 추론력 이점이 거의 무의미한 작업이라 대형 모델의 품질 이득이 작다. **Gemma 4 12B**는 나온 지 얼마 안 돼 Hexagon NPU 빌드도 사실상 부재 → CPU/GPU로 떨어져 전제 붕괴.
+**Context**: 디코드는 **메모리 대역폭 바운드**라 속도 ≈ 대역폭 ÷ (모델 토큰당 바이트). RAM 용량·연산유닛으론 안 빨라지고, 모델 크기에 거의 반비례한다(4B Q4/INT4 ~15 tok/s, 12B ~5~6 tok/s 수준). Intel NPU(OpenVINO IR) 생태계도 LLM에서는 **~4B 파라미터 예산**이 실효 한계로, INT4 weight compression 기준이 NPU 결에 맞는다. 번역은 12B의 추론력 이점이 거의 무의미한 작업이라 대형 모델의 품질 이득이 작다. **Gemma 4 12B**는 Intel NPU용 OpenVINO IR 빌드·검증이 사실상 부재 → CPU/GPU로 떨어져 전제 붕괴. (실효 대역폭과 tok/s는 Intel 358H 실기에서 Phase 0로 재측정한다.)
 
 **Decision**: 이 기기에서는 **≤4B만** 사용. 짧은 번역(게임 대사 등)은 **소형(0.6B~1.7B)** 우선, 정확도가 필요한 긴 문학은 4B. **양자화(Q4)** 를 속도 레버로 사용. 12B+ 는 채택하지 않고 필요 시 **dGPU(RTX 5080) 기기**로 분리.
 
@@ -176,8 +178,22 @@
 ## ADR-015 — 로그와 설정: `log()` 단일 진입점 + env 우선. 산재 출력·하드코딩 기각
 **Status**: Accepted
 
-**Context**: Phase 0부터 설치/검증 스크립트가 여러 런타임(PowerShell, Python)을 사용한다. 콘솔 출력이 각 스크립트에 직접 흩어지면 나중에 로그를 파일, JSONL, 앱 대시보드, IPC로 전환할 때 호출부를 모두 수정해야 한다. 모델명, API key, endpoint, npurun/QNN 경로도 커맨드와 config에 흩어지면 실기 장비별 전환이 어렵다.
+**Context**: Phase 0부터 설치/검증 스크립트가 여러 런타임(PowerShell, Python)을 사용한다. 콘솔 출력이 각 스크립트에 직접 흩어지면 나중에 로그를 파일, JSONL, 앱 대시보드, IPC로 전환할 때 호출부를 모두 수정해야 한다. 모델명, API key, endpoint, OVMS/OpenVINO 경로도 커맨드와 config에 흩어지면 실기 장비별 전환이 어렵다.
 
-**Decision**: 모든 스크립트 출력은 각 런타임의 공통 `log()` 함수를 통과한다. Phase 0의 Python 로그는 `scripts/phase0/phase0_common.py`, PowerShell 로그는 `scripts/phase0/common.ps1`이 담당한다. 공유 기본값은 config/profile에 두고, API key, npurun/QNN/model path 같은 머신별 값과 endpoint/profile/model/output override만 env에서 우선 관리한다. 실제 `phase0/.env`는 git ignore하고, `phase0/.env.example`만 버전 관리한다.
+**Decision**: 모든 스크립트 출력은 각 런타임의 공통 `log()` 함수를 통과한다. Phase 0의 Python 로그는 `scripts/phase0/phase0_common.py`, PowerShell 로그는 `scripts/phase0/common.ps1`이 담당한다. 공유 기본값은 config/profile에 두고, API key, OVMS/OpenVINO/model path 같은 머신별 값과 endpoint/profile/model/output override만 env에서 우선 관리한다. 실제 `phase0/.env`는 git ignore하고, `phase0/.env.example`만 버전 관리한다.
 
 **Consequences**: 로그 수집 방식을 바꿀 때 공통 `log()`만 수정하면 된다. 모델 교체와 장비별 경로 변경은 env/profile 수정으로 처리한다. 단, Python/PowerShell 런타임별 `log()` 구현은 각각 존재하므로 제품 본 구현에서는 `src/gloss/logging/`으로 한 번 더 통합한다.
+
+---
+
+## ADR-016 — Intel NPU 추론 백엔드: OpenVINO Model Server (OVMS) GenAI, device=NPU. npurun/Genie/QNN(ADR-001) 대체
+**Status**: Accepted (Phase 0 Intel 358H 실기 재검증 필요)
+
+**Context**: 기기가 Snapdragon X Plus(Qualcomm Hexagon NPU)에서 **Intel Core Ultra 358H(Intel AI Boost NPU)**로 변경됐다(2026-06-20). 이로써 ADR-001의 전제(Hexagon, libGenie/QnnHtp.dll, npurun)가 전부 무효가 된다.
+- **Qualcomm 경로**(npurun/Genie/QNN EP, NexaSDK)는 Hexagon DSP 전용이라 Intel NPU에서 실행 불가 → **Deprecated**.
+- Intel(x86-64) NPU에서 LLM을 실제로 NPU에 올리는 1급 경로는 **OpenVINO**다. 모델은 **OpenVINO IR(.xml/.bin)**로 export(`optimum-cli export openvino`, INT4 weight compression)하고, 런타임에서 `device="NPU"`로 적재한다.
+- 기존 아키텍처(ADR-011)는 추론을 **OpenAI 호환 HTTP**로 추상화해 두었다. Intel 쪽에서 이 계약을 그대로 만족하는 서버가 **OpenVINO Model Server(OVMS)**로, GenAI 엔드포인트 `/v3/chat/completions`(+ `/v3/completions`)를 제공한다. 대안: standalone OpenVINO GenAI 서버, ONNX Runtime + OpenVINO/DirectML EP(폴백), Ollama+IPEX-LLM(NPU 미성숙).
+
+**Decision**: Intel NPU 기본 백엔드는 **OVMS(OpenVINO GenAI, `--target_device NPU`)**. OpenAI 호환 엔드포인트(`http://127.0.0.1:8000/v3`)로 추상화해 프론트(Text/Visual 엔진)는 무변경. 모델은 OpenVINO IR(INT4)로 관리하고, 교체는 ADR-010대로 profile + active_model_profile로 처리한다. 폴백 후보 순서: **OVMS(OpenVINO GenAI) → standalone OpenVINO GenAI → ONNX Runtime + OpenVINO/DirectML EP.** GGUF/LiteRT는 NPU 미지원이라 계속 제외.
+
+**Consequences**: 백엔드 교체가 설정 한 줄(ADR-011 유지). x86-64 전환으로 ARM64 휠 리스크(R4)가 크게 완화된다(OpenVINO·PyQt6 x64 휠 가용). 단 vision encode가 NPU에 올라가는지(또는 GPU/CPU fallback인지)는 Intel NPU에서 다시 검증해야 하고, IR export·INT4 정확도·NPU 적재 한계(컨텍스트·동적 shape)는 Phase 0에서 새로 측정한다. Snapdragon 시절 tok/s·증거(2026-06-09 노트)는 이 기기 합격 근거로 쓰지 않는다.

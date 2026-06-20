@@ -59,10 +59,10 @@ $environment = [ordered]@{
     processor = Try-Collect { @(Get-CimInstance Win32_Processor | ForEach-Object { ConvertTo-PlainObject $_ }) }
     memory = Try-Collect { @(Get-CimInstance Win32_PhysicalMemory | ForEach-Object { ConvertTo-PlainObject $_ }) }
     videoControllers = Try-Collect { @(Get-CimInstance Win32_VideoController | ForEach-Object { ConvertTo-PlainObject $_ }) }
-    qualcommDevices = Try-Collect {
+    npuDevices = Try-Collect {
         @(Get-CimInstance Win32_PnPEntity | Where-Object {
-            ($_.Name -match "Qualcomm|Hexagon|\bNPU\b|Neural Processing|HTP") -or
-            ($_.Manufacturer -match "Qualcomm")
+            ($_.Name -match "Intel.*(NPU|AI Boost|Neural|VPU)|\bNPU\b|Neural Processing|AI Boost") -or
+            ($_.Manufacturer -match "Intel")
         } | ForEach-Object { ConvertTo-PlainObject $_ })
     }
 }
@@ -72,7 +72,7 @@ $environment | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 -Path $envir
 
 $counterCandidates = @(Try-Collect {
     @(Get-Counter -ListSet * -ErrorAction SilentlyContinue | Where-Object {
-        $_.CounterSetName -match "\bNPU\b|Neural Processing|HTP|GPU|Compute|Qualcomm"
+        $_.CounterSetName -match "\bNPU\b|Neural Processing|AI Boost|GPU|Compute|Intel"
     } | ForEach-Object {
         [ordered]@{
             counterSetName = $_.CounterSetName

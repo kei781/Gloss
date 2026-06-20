@@ -1,15 +1,15 @@
 # PRD — Gloss
 
-> **Gloss** — 가리킨 화면 텍스트를 Snapdragon NPU에서 바로 번역해 게임자막처럼 띄우는 온디바이스 오버레이. 로컬·프라이빗, 추론은 NPU 전담.
+> **Gloss** — 가리킨 화면 텍스트를 Intel NPU에서 바로 번역해 게임자막처럼 띄우는 온디바이스 오버레이. 로컬·프라이빗, 추론은 NPU 전담.
 
 | 항목 | 값 |
 |---|---|
-| 버전 | v0.3.3 |
-| 작성일 | 2026-06-09 |
-| 변경 | v0.3.3: Phase 0 디렉토리 구조, `log()` 단일 출력 계약, env 기반 key/model 관리 추가. v0.3.2: 모델 프로파일 기반 교체 구조 추가. v0.3.1: NPU 검증 게이트 직접 증거화, CPU/GPU 보조 작업 범위 정리, 성공 기준 정량화. (v0.3: 프로젝트명 **Gloss** 확정 + tagline 추가. v0.2: 백엔드·모델 평가 반영, 모델 사이징·Visual 2-경로·유튜브 비목표화) |
+| 버전 | v0.4.0 |
+| 작성일 | 2026-06-20 |
+| 변경 | v0.4.0: 기기 변경(Snapdragon X Plus → Intel Core Ultra 358H). NPU 백엔드를 npurun/Genie/QNN(Hexagon, deprecated)에서 **OpenVINO Model Server(OVMS, device=NPU)**로 전환, 플랫폼 ARM64 → x64. (ADR-001 deprecated, ADR-016 추가) v0.3.3: Phase 0 디렉토리 구조, `log()` 단일 출력 계약, env 기반 key/model 관리 추가. v0.3.2: 모델 프로파일 기반 교체 구조 추가. v0.3.1: NPU 검증 게이트 직접 증거화, CPU/GPU 보조 작업 범위 정리, 성공 기준 정량화. (v0.3: 프로젝트명 **Gloss** 확정 + tagline 추가. v0.2: 백엔드·모델 평가 반영, 모델 사이징·Visual 2-경로·유튜브 비목표화) |
 | 작성자 | 호크 (노상운) |
 | 상태 | Draft — **Phase 0 검증 통과 전 본 구현 착수 금지** |
-| 대상 플랫폼 | Windows 11 on ARM64 (Snapdragon X Plus / X1P-42-100 / 32GB) |
+| 대상 플랫폼 | Windows 11 x64 (Intel Core Ultra 358H / Intel AI Boost NPU / 32GB) |
 
 ---
 
@@ -18,7 +18,7 @@
 
 - 클라우드 번역기(구글/DeepL)는 프라이버시·오프라인·문학 번역 품질에서 아쉽다.
 - 게임 텍스트는 DirectX로 화면에 픽셀로 렌더되어 접근성 API·텍스트 추출이 통하지 않는다 → **픽셀 OCR이 유일한 공통 입력 경로**.
-- 노트북에 45 TOPS Hexagon NPU가 있으나, **PC(Windows ARM)의 NPU LLM 생태계가 모바일보다 미성숙**하다. 일반 GGUF 런타임(Ollama/llama.cpp/LM Studio)과 LiteRT의 NPU 가속은 PC ARM에 적용되지 않아 CPU로 떨어진다. NPU를 실제로 쓰려면 **ONNX Runtime + QNN EP** 또는 **Qualcomm Genie SDK**(npurun/Nexa) 경로여야 한다.
+- 노트북에 Intel AI Boost NPU(Core Ultra 358H)가 있다. PC NPU LLM 경로는 일반 GGUF 런타임(Ollama/llama.cpp/LM Studio)으로는 NPU를 쓰지 못하고 CPU로 떨어진다. Intel NPU를 실제로 쓰려면 **OpenVINO**(IR 모델 + `device=NPU`) 경로여야 하며, 이를 OpenAI 호환 HTTP로 노출하는 **OpenVINO Model Server(OVMS)**를 백엔드로 쓴다. (이전 Snapdragon/Hexagon 시절의 npurun/Genie/QNN 경로는 deprecated — ADR-001/016.)
 
 목표는 **NPU를 LLM/VLM 추론에 전담**시켜 CPU/GPU를 본 작업(게임 등)에 남겨두고, 로컬·오프라인·프라이빗하게 번역을 제공하는 도구다.
 
@@ -32,7 +32,7 @@
 **비목표 (지금 안 함)**
 - **실시간 흐르는 자막(유튜브 라이브 캡션식)** — 캡처-번역 레이턴시가 흐름을 못 따라감 → Windows Live Captions에 위임. (ADR-014)
 - **12B+ 모델 구동** — 속도·NPU 빌드 부재로 이 노트북엔 부적합. 해당 용도는 dGPU(RTX 5080) 기기. (ADR-012)
-- **LiteRT-LM의 NPU 가속에 의존** — NPU delegate가 모바일(Android) 한정. (ADR-001)
+- **GGUF/LiteRT 런타임의 NPU 가속에 의존** — Intel NPU(OpenVINO) 경로를 쓰지 못하고 CPU/GPU로 떨어짐. (ADR-016)
 - 클라우드 모델 / 모바일·타 OS 지원.
 - 대량 웹 스크래핑·재배포 (개인 독서 용도 한정).
 - 즉시(instant) 모델 핫스왑.
@@ -86,8 +86,8 @@
 ## 6. 비기능 요구사항
 - **NFR-1 자원**: LLM/VLM 추론은 NPU 전담. CPU/GPU는 캡처·렌더·계측 및 선택적 경량 OCR helper만 허용하며, helper를 켠 경우 CPU 점유와 레이턴시 이득을 대시보드와 Phase 결과에 별도 기록한다.
 - **NFR-2 성능 / 레이턴시**:
-  - 디코드는 **메모리 대역폭 바운드**(≈135GB/s LPDDR5x). 속도 ≈ 대역폭 ÷ (모델 토큰당 바이트). → **RAM 용량(32GB)이나 연산유닛 교체로는 안 빨라진다.** 속도 레버는 **모델 축소 + 양자화(Q4)**.
-  - 4B Q4 기준 실효 디코드 **~15 tok/s** (이론 천장 ~67의 약 20–25%).
+  - 디코드는 **메모리 대역폭 바운드**(LPDDR5x; 실효 대역폭은 Intel 358H 실기에서 Phase 0로 측정). 속도 ≈ 대역폭 ÷ (모델 토큰당 바이트). → **RAM 용량(32GB)이나 연산유닛 교체로는 안 빨라진다.** 속도 레버는 **모델 축소 + 양자화(INT4)**.
+  - 4B INT4 기준 실효 디코드 **~15 tok/s 수준**(계획 가정, Intel 358H 실기로 재확정).
   - 예상 레이턴시:
 
     | 작업 | 예상 |
@@ -98,12 +98,12 @@
 
   - **on-demand 용례엔 충분, 실시간 스트리밍 자막엔 부적합.**
 - **NFR-3 로컬·오프라인·프라이빗**: 외부 네트워크 의존 없음(소설 URL fetch 제외). 로컬 백엔드 HTTP는 허용하되 번역 대상 텍스트·이미지는 외부 모델/서버로 전송하지 않는다.
-- **NFR-4 플랫폼**: Windows 11 ARM64 네이티브 우선. 의존 라이브러리 ARM64 휠 확보 필수.
+- **NFR-4 플랫폼**: Windows 11 x64 네이티브 우선. 의존 라이브러리(OpenVINO, PyQt6 등) x64 휠 확보. (ARM64 시절 대비 휠 가용성 리스크는 완화됨.)
 
 ## 7. 범위 & 단계 (Claude Code 빌드 순서)
 
 - **Phase 0 — NPU 검증 게이트 (선결, 코드 거의 없음)**
-  - 노트북 X Plus에서 백엔드로 Qwen3-VL-4B·소형 텍스트 모델이 **실제로 NPU에 적재·가동**되는지 확인.
+  - 노트북(Intel Core Ultra 358H)에서 백엔드로 Qwen3-VL-4B·소형 텍스트 모델이 **실제로 Intel NPU(device=NPU)에 적재·가동**되는지 확인.
   - 검증 절차와 산출물은 `phase0/README.md`와 `phase0/verification-note-template.md`를 기준으로 남긴다.
   - Phase 0 산출물에는 `phase0/directory-structure.md`의 전체 디렉토리 구조 설계와 이번 수정 내역을 포함한다.
   - 스크립트 로그는 공통 `log()` 함수만 통과하고, 주요 key/base URL/model/profile/path는 env(`phase0/.env`, 예시는 `.env.example`)로 관리한다.
@@ -111,12 +111,12 @@
   - **검증 산출물**: 검증일, OS/드라이버/백엔드/모델 버전, 실행 명령, 로그/스크린샷, tok/s, CPU/RAM, NPU 사용 증거를 Phase 0 검증 노트로 남긴다.
   - **합격 기준**: ~4B 모델이 **> 5 tok/s** AND NPU 사용의 직접 증거 1개 이상.
     - 작업관리자/PDH counter가 읽히면 **NPU% > 0** 필수.
-    - counter가 안 잡히면 Genie/QNN/HTP 백엔드 로그, 벤더 샘플 출력, ETW/perf trace 중 하나로 NPU 적재·실행을 입증.
+    - counter가 안 잡히면 OVMS 서버 로그(target_device=NPU)·OpenVINO NPU plugin 로그, 벤더 샘플 출력, ETW/perf trace 중 하나로 NPU 적재·실행을 입증.
     - tok/s + CPU 유휴는 보조 증거로만 사용하며, 단독 합격 근거로 쓰지 않는다.
   - 생성되는데 직접 증거가 없거나, NPU%를 읽을 수 있는데 0%면 silent CPU fallback = **불합격**.
   - VLM의 **vision-encode 경로**도 NPU에 올라가는지(또는 CPU fallback인지) 별도 확인.
   - 측정 결과로 **최종 모델·사이즈 확정** (빠릿함이 중요한 용례는 더 작게).
-  - 백엔드 후보 순서: **npurun(Genie) 우선 → NexaSDK 대안 → ONNX Runtime + QNN EP 폴백.** LiteRT·GGUF 런타임은 PC NPU 미지원이라 후보 제외.
+  - 백엔드 후보 순서: **OVMS(OpenVINO GenAI, device=NPU) 우선 → standalone OpenVINO GenAI 대안 → ONNX Runtime + OpenVINO/DirectML EP 폴백.** LiteRT·GGUF 런타임은 Intel NPU 미지원이라 후보 제외.
   - **이 게이트 통과 전 본 구현 착수 금지.**
 - **Phase 1 — Text 엔진**: OCR 불확실성 없어 결과물 가장 빨리. URL→추출→번역→리더. (FR-T1, FR-T4) — *호출 경로 계측 훅을 여기서부터 심는다.*
 - **Phase 2 — Visual 온디맨드**: WGC 캡처 → VLM(또는 OCR+소형 LLM) → 오버레이. (FR-V1, FR-V2, FR-V5, FR-V6)
@@ -134,11 +134,11 @@
 - 대시보드에서 요청별 레이턴시, 디코드 tok/s, CPU/RAM, NPU 직접 증거 또는 Phase 0 검증 상태가 확인된다.
 
 ## 9. 리스크 & 오픈 이슈
-- **R1 X Plus NPU 게이팅**: 일부 런타임이 SoC 문자열로 X Elite만 허용 → npurun(하드웨어 직접 프로빙) 우선. Phase 0에서 확정.
+- **R1 Intel NPU 적재 게이팅**: VLM/대형 컨텍스트가 OpenVINO NPU plugin의 동적 shape·메모리 제약으로 NPU에 안 올라가고 GPU/CPU로 fallback할 수 있음 → IR export 옵션·정적 shape·INT4로 완화, Phase 0에서 확정.
 - **R2 VLM hallucination**: 저대비·산재 HUD 텍스트에서 누락/허위 생성 가능 → 구역 기반 + 고해상 캡처로 완화. 복불복 인정.
 - **R3 한국어 출력 품질**: OmniNeural는 영어 위주 → Qwen3-VL/Qwen3 채택으로 회피.
-- **R4 ARM64 휠**: PyQt6·캡처·Playwright 등 ARM64 가용성 확인 필요. 불가 시 .NET WPF 대안.
-- **R5 모델 적재 비용**: NPU 그래프 적재 수초 → 스왑은 reload형으로 한정.
-- **R6 성능 미달 체감**: decode가 bandwidth-bound라 기대만큼 안 빠름(4B ~15 tok/s, 비주얼 캡처당 수초). → 모델 축소·출력 제약(FR-V6)·타이트 크롭으로 완화, 용례별 사이즈 분리.
+- **R4 x64 휠**: PyQt6·OpenVINO·캡처·Playwright x64 가용성 확인(ARM64 대비 리스크 낮음). 불가 시 .NET WPF 대안.
+- **R5 모델 적재 비용**: NPU 그래프 컴파일·적재 수초 → 스왑은 reload형으로 한정.
+- **R6 성능 미달 체감**: decode가 bandwidth-bound라 기대만큼 안 빠름(4B ~15 tok/s 수준, 비주얼 캡처당 수초). → 모델 축소·출력 제약(FR-V6)·타이트 크롭으로 완화, 용례별 사이즈 분리.
 
-> **해결된 평가(기록)**: LiteRT-LM(NPU delegate 모바일 한정), Gemma 4 12B(속도·NPU 빌드 부재로 기기 부적합)는 평가 후 제외. 근거는 ADR-001 / ADR-012 참조.
+> **해결된 평가(기록)**: GGUF/LiteRT(Intel NPU 미지원), Gemma 4 12B(속도·Intel NPU IR 빌드/검증 부재로 기기 부적합)는 평가 후 제외. 근거는 ADR-012 / ADR-016 참조. Snapdragon/Hexagon(npurun/Genie/QNN) 경로는 기기 변경으로 deprecated — ADR-001 참조.
