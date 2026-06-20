@@ -2,11 +2,15 @@ param(
     [string]$Config = ".\phase0\config.example.json",
     [string]$EnvFile = ".\phase0\.env",
     [string]$Profile = "",
-    [ValidateSet("serve", "show", "pull", "bench", "run")]
+    [ValidateSet("serve", "show", "pull")]
     [string]$Action = "serve",
-    [string]$Prompt = "Translate this sentence into natural Korean and output only the translation: The moonlight fell softly over the old town.",
     [switch]$PrintOnly
 )
+
+# Intel Core Ultra 358H (Intel AI Boost NPU) 용 OpenVINO Model Server(OVMS) 드라이버.
+# OVMS는 device=NPU로 OpenAI 호환 엔드포인트(/v3/chat/completions)를 제공한다.
+# Snapdragon/Hexagon(npurun) 시절 드라이버는 run_model_profile.npurun.ps1(DEPRECATED) 참조.
+# 단발 추론/벤치 측정은 scripts/phase0/measure_openai_backend.py로 수행한다.
 
 $ErrorActionPreference = "Stop"
 
@@ -59,8 +63,11 @@ if ($null -eq $profileProperty) {
 
 $profileJson = $profileProperty.Value
 $profileBackend = [string]$profileJson.backend
-if ($profileBackend -ne "npurun") {
-    throw "Profile '$profileName' uses backend '$profileBackend'. run_model_profile.ps1 only supports npurun profiles."
+if ($profileBackend -ne "ovms") {
+    if ($profileBackend -eq "npurun") {
+        throw "Profile '$profileName' uses deprecated backend 'npurun' (Snapdragon/Hexagon). Intel NPU에서는 ovms profile을 쓰세요. Hexagon 재현이 필요하면 run_model_profile.npurun.ps1을 사용하세요."
+    }
+    throw "Profile '$profileName' uses backend '$profileBackend'. run_model_profile.ps1 only supports ovms (OpenVINO Model Server, Intel NPU) profiles."
 }
 
 $runtimeModel = Get-EnvValue -Names @("GLOSS_PHASE0_MODEL", "GLOSS_MODEL")
@@ -71,61 +78,115 @@ if ([string]::IsNullOrWhiteSpace($runtimeModel)) {
     throw "Profile '$profileName' does not define runtime_model."
 }
 
-$npurunPathValue = Get-EnvValue -Names @("GLOSS_PHASE0_NPURUN_PATH", "NPURUN_PATH")
-if ([string]::IsNullOrWhiteSpace($npurunPathValue) -and $configJson.backend.npurun_path) {
-    $npurunPathValue = [string]$configJson.backend.npurun_path
+$sourceModel = ""
+if ($profileJson.artifact -and $profileJson.artifact.hf_id) {
+    $sourceModel = [string]$profileJson.artifact.hf_id
 }
-if ([string]::IsNullOrWhiteSpace($npurunPathValue)) {
-    $npurunPathValue = ".tools/npurun/npurun.exe"
+if (
+    [string]::IsNullOrWhiteSpace($sourceModel) -and
+    $profileJson.artifact -and
+    $profileJson.artifact.source -and
+    ([string]$profileJson.artifact.source) -match "^[^/\s]+/[^/\s]+$"
+) {
+    $sourceModel = [string]$profileJson.artifact.source
 }
-$npurunPath = Resolve-WorkspacePath -PathValue $npurunPathValue -ConfigDir $configDir
-
-$qnnDir = Get-EnvValue -Names @("GLOSS_PHASE0_QNN_RUNTIME_DIR", "QNN_SDK_ROOT")
-if ([string]::IsNullOrWhiteSpace($qnnDir) -and $configJson.backend.qnn_runtime_dir) {
-    $qnnDir = Resolve-WorkspacePath -PathValue ([string]$configJson.backend.qnn_runtime_dir) -ConfigDir $configDir
-} elseif (-not [string]::IsNullOrWhiteSpace($qnnDir)) {
-    $qnnDir = Resolve-WorkspacePath -PathValue $qnnDir -ConfigDir $configDir
-}
-if (-not [string]::IsNullOrWhiteSpace($qnnDir) -and (Test-Path -LiteralPath $qnnDir)) {
-    $env:PATH = "$qnnDir;$env:PATH"
-    $env:QNN_SDK_ROOT = $qnnDir
+if ([string]::IsNullOrWhiteSpace($sourceModel) -and $runtimeModel -match "^[^/\s]+/[^/\s]+$") {
+    $sourceModel = $runtimeModel
 }
 
-$modelsDirValue = Get-EnvValue -Names @("GLOSS_PHASE0_MODELS_DIR", "NPURUN_MODELS_DIR")
+$ovmsPathValue = Get-EnvValue -Names @("GLOSS_PHASE0_OVMS_PATH", "OVMS_PATH")
+if ([string]::IsNullOrWhiteSpace($ovmsPathValue) -and $configJson.backend.ovms_path) {
+    $ovmsPathValue = [string]$configJson.backend.ovms_path
+}
+if ([string]::IsNullOrWhiteSpace($ovmsPathValue)) {
+    $ovmsPathValue = ".tools/ovms/ovms.exe"
+}
+$ovmsPath = Resolve-WorkspacePath -PathValue $ovmsPathValue -ConfigDir $configDir
+
+$targetDevice = Get-EnvValue -Names @("GLOSS_PHASE0_TARGET_DEVICE")
+if ([string]::IsNullOrWhiteSpace($targetDevice) -and $profileJson.target_device) {
+    $targetDevice = [string]$profileJson.target_device
+}
+if ([string]::IsNullOrWhiteSpace($targetDevice) -and $configJson.backend.target_device) {
+    $targetDevice = [string]$configJson.backend.target_device
+}
+if ([string]::IsNullOrWhiteSpace($targetDevice)) {
+    $targetDevice = "NPU"
+}
+
+$modelsDirValue = Get-EnvValue -Names @("GLOSS_PHASE0_MODELS_DIR", "OVMS_MODELS_DIR")
 if ([string]::IsNullOrWhiteSpace($modelsDirValue) -and $configJson.backend.models_dir) {
     $modelsDirValue = [string]$configJson.backend.models_dir
 }
 if ([string]::IsNullOrWhiteSpace($modelsDirValue)) {
-    $modelsDirValue = ".models/npurun"
+    $modelsDirValue = ".models/ovms"
 }
 $modelsDir = Resolve-WorkspacePath -PathValue $modelsDirValue -ConfigDir $configDir
 New-Item -ItemType Directory -Force -Path $modelsDir | Out-Null
-$env:NPURUN_MODELS_DIR = $modelsDir
+
+# REST port는 profile/config의 base_url에서 추출한다. 기본 8000.
+$baseUrl = Get-EnvValue -Names @("GLOSS_PHASE0_BASE_URL", "GLOSS_OPENAI_BASE_URL")
+if ([string]::IsNullOrWhiteSpace($baseUrl) -and $profileJson.serve.base_url) {
+    $baseUrl = [string]$profileJson.serve.base_url
+}
+if ([string]::IsNullOrWhiteSpace($baseUrl) -and $configJson.backend.base_url) {
+    $baseUrl = [string]$configJson.backend.base_url
+}
+$restPort = "8000"
+if (-not [string]::IsNullOrWhiteSpace($baseUrl)) {
+    try {
+        $parsedPort = ([System.Uri]$baseUrl).Port
+        if ($parsedPort -gt 0) { $restPort = [string]$parsedPort }
+    } catch {
+        log "base_url에서 port 파싱 실패, 기본 8000 사용: $baseUrl" -level "WARN"
+    }
+}
 
 $arguments = @()
 switch ($Action) {
-    "serve" { $arguments = @("serve", "--model", $runtimeModel) }
-    "show" { $arguments = @("show", $runtimeModel) }
-    "pull" { $arguments = @("pull", $runtimeModel) }
-    "bench" { $arguments = @("bench", $runtimeModel) }
-    "run" { $arguments = @("run", $runtimeModel, $Prompt) }
+    "serve" {
+        $arguments = @(
+            "--rest_port", $restPort,
+            "--model_repository_path", $modelsDir,
+            "--model_name", $runtimeModel,
+            "--target_device", $targetDevice,
+            "--task", "text_generation"
+        )
+    }
+    "pull" {
+        if ([string]::IsNullOrWhiteSpace($sourceModel)) {
+            throw "Profile '$profileName' does not define an HF repo id for OVMS pull. Add artifact.hf_id (for example, Qwen/Qwen3-4B-Instruct-2507) or pass a profile whose runtime_model is already an owner/repo id."
+        }
+        $arguments = @(
+            "--pull",
+            "--source_model", $sourceModel,
+            "--model_repository_path", $modelsDir,
+            "--target_device", $targetDevice,
+            "--task", "text_generation"
+        )
+    }
+    "show" {
+        $arguments = @("--version")
+    }
 }
 
-log "profile: $profileName"
-log "model:   $runtimeModel"
-log "backend: $profileBackend"
-log "status:  $($profileJson.status)"
-log "npurun:  $npurunPath"
-log "models:  $modelsDir"
-if (-not [string]::IsNullOrWhiteSpace($qnnDir)) {
-    log "qnn:     $qnnDir"
+log "profile:  $profileName"
+log "model:    $runtimeModel"
+log "backend:  $profileBackend"
+log "status:   $($profileJson.status)"
+log "ovms:     $ovmsPath"
+if ($Action -eq "pull") {
+    log "source:   $sourceModel"
 }
-log "action:  $Action"
+log "device:   $targetDevice"
+log "models:   $modelsDir"
+log "rest_port:$restPort"
+log "action:   $Action"
 
 if ($PrintOnly) {
-    log "command: $npurunPath $($arguments -join ' ')"
+    log "command: $ovmsPath $($arguments -join ' ')"
     exit 0
 }
 
-& $npurunPath @arguments
+& $ovmsPath @arguments
 exit $LASTEXITCODE

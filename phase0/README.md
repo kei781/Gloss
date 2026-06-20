@@ -1,6 +1,8 @@
 # Phase 0 NPU 검증 가이드
 
-Phase 0의 목적은 Gloss 본 구현 전에 Snapdragon X Plus 장비에서 후보 백엔드와 모델이 실제로 NPU에 적재되고 실행되는지 확인하는 것이다. 이 단계는 기능 구현이 아니라 **게이트 검증**이다.
+Phase 0의 목적은 Gloss 본 구현 전에 Intel Core Ultra 358H(Intel AI Boost NPU) 장비에서 후보 백엔드와 모델이 실제로 NPU(device=NPU)에 적재되고 실행되는지 확인하는 것이다. 이 단계는 기능 구현이 아니라 **게이트 검증**이다.
+
+> 기기 변경 이력: 이전 Snapdragon X Plus(Hexagon NPU, npurun/Genie/QNN) 경로는 deprecated다(ADR-001 → ADR-018). Hexagon 시절 검증 기록은 `phase0/verification-notes/2026-06-09-real-device.md`에 보존한다.
 
 ## 산출물
 
@@ -12,8 +14,9 @@ Phase 0의 목적은 Gloss 본 구현 전에 Snapdragon X Plus 장비에서 후�
 - `phase0/model-profiles.json`: 교체 가능한 모델 프로파일 목록
 - `scripts/phase0/common.ps1`: PowerShell용 `log()`와 env loader
 - `scripts/phase0/phase0_common.py`: Python용 `log()`와 env loader
-- `scripts/phase0/collect_windows_env.ps1`: Windows/장치/NPU counter 후보 수집
-- `scripts/phase0/run_model_profile.ps1`: 선택한 모델 프로파일로 npurun 실행
+- `scripts/phase0/collect_windows_env.ps1`: Windows/장치(Intel NPU)/NPU counter 후보 수집
+- `scripts/phase0/run_model_profile.ps1`: 선택한 모델 프로파일로 OVMS(OpenVINO Model Server, device=NPU) 실행
+- `scripts/phase0/run_model_profile.npurun.ps1`: (DEPRECATED) Snapdragon/Hexagon 시절 npurun 드라이버, 재현/참고용
 - `scripts/phase0/measure_openai_backend.py`: OpenAI 호환 백엔드의 TTFT/tok/s 측정
 
 ## 로그와 env 계약
@@ -30,9 +33,9 @@ Phase 0 스크립트의 모든 콘솔 출력은 `log()` 함수를 통과한다.
 주요 env key:
 
 - `GLOSS_PHASE0_API_KEY`: 로컬 backend API key
-- `GLOSS_PHASE0_NPURUN_PATH`: npurun 실행 파일
-- `GLOSS_PHASE0_QNN_RUNTIME_DIR`: QNN/Genie DLL 경로
-- `GLOSS_PHASE0_MODELS_DIR`: npurun 모델 저장소
+- `GLOSS_PHASE0_OVMS_PATH`: OVMS(OpenVINO Model Server) 실행 파일
+- `GLOSS_PHASE0_TARGET_DEVICE`: OpenVINO 타겟 디바이스(기본 `NPU`)
+- `GLOSS_PHASE0_MODELS_DIR`: OpenVINO IR 모델 저장소(`.models/ovms`)
 
 필요할 때만 쓰는 override:
 
@@ -49,7 +52,7 @@ Phase 0 스크립트의 모든 콘솔 출력은 `log()` 함수를 통과한다.
 - `phase0/config.example.json`의 `active_model_profile`: 현재 기본 모델을 고른다.
 - CLI의 `--profile` 또는 PowerShell의 `-Profile`: 임시로 다른 모델을 고른다.
 
-기본 프로파일은 `qwen3-4b`이며, 런타임 모델명은 `qwen3-4b-instruct-2507`이다. 이 모델은 `npurun v0.1.0-rc.2` 내장 registry에는 없으므로 Qualcomm AI Hub Genie bundle을 확보해야 한다. 이미 실기에서 통과한 `phi-3.5-mini`는 fallback 프로파일로 남겨 둔다.
+기본 프로파일은 `qwen3-4b`이며, 런타임 모델명은 `qwen3-4b-instruct-2507`이다. Intel NPU에서 쓰려면 OpenVINO IR(.xml/.bin)로 export해야 한다(예: `optimum-cli export openvino --model Qwen/Qwen3-4B-Instruct-2507 --weight-format int4`). `phi-3.5-mini`는 텍스트 fallback 프로파일이며 Intel NPU(OVMS) 경로 재검증이 필요하다. Snapdragon/Hexagon 시절 검증본은 deprecated 프로파일 `phi-3.5-mini-hexagon`으로 보존한다.
 
 모델을 바꾸는 방법:
 
@@ -74,13 +77,13 @@ python .\scripts\phase0\measure_openai_backend.py `
 ## 검증 순서
 
 1. 후보 백엔드를 실행한다.
-   - 1순위: npurun(Genie)
-   - 2순위: NexaSDK
-   - 3순위: ONNX Runtime + QNN EP
+   - 1순위: OVMS(OpenVINO GenAI, device=NPU)
+   - 2순위: standalone OpenVINO GenAI
+   - 3순위: ONNX Runtime + OpenVINO/DirectML EP
 2. Windows 환경과 NPU counter 후보를 수집한다.
 3. 텍스트 모델에 짧은 번역 요청을 3회 이상 보낸다.
 4. VLM 모델에 이미지 입력 요청을 3회 이상 보내 vision encode 경로를 확인한다.
-5. 작업 관리자, PDH counter, Genie/QNN/HTP 로그, ETW/perf trace 중 하나 이상으로 NPU 직접 증거를 남긴다.
+5. 작업 관리자, PDH counter, OVMS 서버 로그(target_device=NPU)·OpenVINO NPU plugin 로그, ETW/perf trace 중 하나 이상으로 NPU 직접 증거를 남긴다.
 6. 결과를 `phase0/verification-note-template.md` 형식으로 정리한다.
 
 ## Windows 환경 수집
@@ -95,13 +98,13 @@ powershell -ExecutionPolicy Bypass -File .\scripts\phase0\collect_windows_env.ps
 
 생성되는 파일:
 
-- `environment.json`: OS/CPU/메모리/비디오 컨트롤러/Qualcomm 관련 장치 정보
+- `environment.json`: OS/CPU/메모리/비디오 컨트롤러/Intel NPU 관련 장치 정보
 - `performance-counter-candidates.json`: NPU/Neural/AI/GPU 관련 counter set 후보
 - `counter-sample.json`: 읽을 수 있는 후보 counter의 짧은 샘플
 
 ## 텍스트 모델 측정
 
-백엔드는 프로파일에 맞춰 `npurun`으로 띄운다. 기본값은 `qwen3-4b`다.
+백엔드는 프로파일에 맞춰 `OVMS`(OpenVINO Model Server, device=NPU)로 띄운다. 기본값은 `qwen3-4b`다.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\phase0\run_model_profile.ps1 `
@@ -145,4 +148,4 @@ python .\scripts\phase0\measure_openai_backend.py `
 - 응답은 나오지만 NPU 직접 증거가 없다.
 - NPU%를 읽을 수 있는데 생성 중 계속 0%다.
 - ~4B 모델이 5 tok/s 이하이며 모델 축소 외 개선 여지가 없다.
-- 백엔드가 X Plus SoC 게이팅, 모델 포맷, 드라이버 문제로 재현 불가능하게 실패한다.
+- 백엔드가 Intel NPU 드라이버/OpenVINO NPU plugin 적재, 모델 포맷(IR), 동적 shape 문제로 재현 불가능하게 실패한다.

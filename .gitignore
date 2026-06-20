@@ -6,6 +6,7 @@ phase0/*.local.env
 .downloads/
 .models/
 .tools/
+.venv/
 .venv-arm64/
 runs/
 phase0/runs/

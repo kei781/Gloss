@@ -15,7 +15,7 @@ Phase 2는 화면 영역을 캡처하고, 보이는 텍스트를 한국어 번�
 `pyproject.toml`에 `gloss-visual` 콘솔 스크립트가 추가되었으므로 editable install을 다시 실행한다.
 
 ```powershell
-.\.venv-arm64\Scripts\python.exe -m pip install -e .
+.\.venv\Scripts\python.exe -m pip install -e .
 ```
 
 ## 캡처 Dry Run
@@ -27,7 +27,7 @@ Codex 샌드박스나 비대화형 세션에서는 `CopyFromScreen`이 `The hand
 per-monitor DPI awareness를 시도한다.
 
 ```powershell
-.\.venv-arm64\Scripts\gloss-visual.exe `
+.\.venv\Scripts\gloss-visual.exe `
   --dry-run `
   --capture-rect "100,100,800,260" `
   --output .\runs\phase2\capture-dry-run.md
@@ -40,7 +40,7 @@ per-monitor DPI awareness를 시도한다.
 VLM/OCR이 아직 연결되지 않은 상태에서는 보이는 텍스트를 `--ocr-text`나 `--ocr-file`로 넣어 visual 번역/메트릭/오버레이 경로를 검증한다.
 
 ```powershell
-.\.venv-arm64\Scripts\gloss-visual.exe `
+.\.venv\Scripts\gloss-visual.exe `
   --profile phi-3.5-mini `
   --ocr-text "星間国家の悪徳領主として、俺は領民から搾取するつもりだった。" `
   --output .\runs\phase2\visual-ocr-text-live.md
@@ -49,7 +49,7 @@ VLM/OCR이 아직 연결되지 않은 상태에서는 보이는 텍스트를 `--
 ## Overlay 확인
 
 ```powershell
-.\.venv-arm64\Scripts\gloss-visual.exe `
+.\.venv\Scripts\gloss-visual.exe `
   --dry-run `
   --ocr-text "The old town slept under moonlight." `
   --overlay `

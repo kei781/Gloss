@@ -24,7 +24,8 @@ Gloss/
       ├─ collect_windows_env.ps1
       ├─ measure_openai_backend.py
       ├─ phase0_common.py
-      └─ run_model_profile.ps1
+      ├─ run_model_profile.ps1            # OVMS (OpenVINO Model Server, Intel NPU)
+      └─ run_model_profile.npurun.ps1     # DEPRECATED (Snapdragon/Hexagon npurun)
 ```
 
 ## 확장 목표 구조
@@ -63,9 +64,18 @@ Gloss/
 - 작은 텍스트 증거(JSONL, backend log excerpt, benchmark summary)는 `phase0/evidence/<date>/`에 선별해 커밋한다.
 - 실기 결과는 `phase0/verification-notes/`에 날짜별로 남긴다.
 
-## 이번 수정에 포함된 내용
+## v0.4.0 수정에 포함된 내용 (Snapdragon/Hexagon → Intel NPU)
 
-- `phase0/.env.example` 추가: API key, npurun/QNN/model dir 등 로컬 값과 선택적 override 관리.
+- 기기 변경(Snapdragon X Plus → Intel Core Ultra 358H)에 맞춰 NPU 백엔드를 npurun/Genie/QNN(Hexagon, deprecated)에서 **OVMS(OpenVINO Model Server, device=NPU)**로 전환.
+- `phase0/model-profiles.json`: 활성 프로파일 backend를 `ovms`로 전환, OpenVINO IR/INT4·`target_device`로 갱신. Hexagon 검증본은 deprecated 프로파일 `phi-3.5-mini-hexagon`으로 보존.
+- `phase0/config.example.json`·`.env.example`: `npurun_path`/`qnn_runtime_dir` → `ovms_path`/`target_device`, base_url → OVMS `/v3` 엔드포인트.
+- `scripts/phase0/run_model_profile.ps1`: OVMS 드라이버로 재작성. 기존 npurun 드라이버는 `run_model_profile.npurun.ps1`(DEPRECATED)로 보존.
+- `scripts/phase0/collect_windows_env.ps1`: Qualcomm 장치 프로빙 → Intel NPU 장치/counter 프로빙.
+- `ADR.md`: ADR-001 Deprecated, ADR-018(OpenVINO Model Server) 추가, ADR-012 Intel 전제로 갱신. `PRD.md`: 대상 플랫폼 x64/Intel NPU로 갱신.
+
+## 이전 수정(v0.3.3)에 포함된 내용
+
+- `phase0/.env.example` 추가: API key, 백엔드 실행 파일/런타임/model dir 등 로컬 값과 선택적 override 관리.
 - `scripts/phase0/phase0_common.py` 추가: Python용 `log()`, `.env` loader, env lookup.
 - `scripts/phase0/common.ps1` 추가: PowerShell용 `log()`, `.env` loader, env lookup, path resolver.
 - `scripts/phase0/measure_openai_backend.py` 수정: 모든 출력이 `log()`를 통과하고, CLI > env > profile/config 순서로 값을 결정.

@@ -141,7 +141,7 @@ def load_runtime_config(
         _nested_get(profile_doc, "serve", "base_url"),
         _nested_get(profile_doc, "openai", "base_url"),
         _nested_get(config, "backend", "base_url"),
-        default="http://127.0.0.1:11435/v1",
+        default="http://127.0.0.1:8000/v3",
     )
 
     selected_api_key = first_defined(

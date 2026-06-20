@@ -6,7 +6,7 @@
 |---|---|
 | 검증일 |  |
 | 검증자 |  |
-| 장비 | Snapdragon X Plus / X1P-42-100 / 32GB |
+| 장비 | Intel Core Ultra 358H / Intel AI Boost NPU / 32GB |
 | OS 빌드 |  |
 | 드라이버/런타임 |  |
 | 최종 판정 | Pass / Fail / Partial |
@@ -15,9 +15,9 @@
 
 | 순위 | 백엔드 | 버전 | 모델 | 결과 | 비고 |
 |---|---|---|---|---|---|
-| 1 | npurun(Genie) |  |  |  |  |
-| 2 | NexaSDK |  |  |  |  |
-| 3 | ONNX Runtime + QNN EP |  |  |  |  |
+| 1 | OVMS (OpenVINO GenAI, device=NPU) |  |  |  |  |
+| 2 | standalone OpenVINO GenAI |  |  |  |  |
+| 3 | ONNX Runtime + OpenVINO/DirectML EP |  |  |  |  |
 
 ## 환경 수집
 
@@ -71,7 +71,8 @@ NPU 직접 증거로 인정한 자료를 적는다.
 
 - [ ] 작업 관리자 NPU% > 0
 - [ ] PDH NPU counter sample
-- [ ] Genie/QNN/HTP 로그
+- [ ] OVMS 서버 로그 (target_device=NPU)
+- [ ] OpenVINO NPU plugin 로그
 - [ ] 벤더 샘플 출력
 - [ ] ETW/perf trace
 
