@@ -1,6 +1,6 @@
 # Phase 0 검증 노트 — 2026-06-09 실기
 
-> **⚠️ DEPRECATED / 역사 기록 (2026-06-20 기준)**: 이 노트는 **Snapdragon X Plus(Qualcomm Hexagon NPU)** 시절 npurun/Genie/QNN/HTP 경로 검증본이다. 기기가 **Intel Core Ultra 358H(Intel AI Boost NPU)**로 변경되어 이 결과는 더 이상 현재 기기의 합격 근거가 아니다. 활성 백엔드는 OVMS(OpenVINO Model Server, device=NPU)이며, 새 검증은 Intel 실기에서 별도 노트로 남긴다. 이 노트는 Hexagon 시절 증거·실패 기록 보존용으로만 유지한다. (ADR-001 → ADR-016)
+> **⚠️ DEPRECATED / 역사 기록 (2026-06-20 기준)**: 이 노트는 **Snapdragon X Plus(Qualcomm Hexagon NPU)** 시절 npurun/Genie/QNN/HTP 경로 검증본이다. 기기가 **Intel Core Ultra 358H(Intel AI Boost NPU)**로 변경되어 이 결과는 더 이상 현재 기기의 합격 근거가 아니다. 활성 백엔드는 OVMS(OpenVINO Model Server, device=NPU)이며, 새 검증은 Intel 실기에서 별도 노트로 남긴다. 이 노트는 Hexagon 시절 증거·실패 기록 보존용으로만 유지한다. (ADR-001 → ADR-018)
 
 ## 요약
 

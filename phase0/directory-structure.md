@@ -71,7 +71,7 @@ Gloss/
 - `phase0/config.example.json`·`.env.example`: `npurun_path`/`qnn_runtime_dir` → `ovms_path`/`target_device`, base_url → OVMS `/v3` 엔드포인트.
 - `scripts/phase0/run_model_profile.ps1`: OVMS 드라이버로 재작성. 기존 npurun 드라이버는 `run_model_profile.npurun.ps1`(DEPRECATED)로 보존.
 - `scripts/phase0/collect_windows_env.ps1`: Qualcomm 장치 프로빙 → Intel NPU 장치/counter 프로빙.
-- `ADR.md`: ADR-001 Deprecated, ADR-016(OpenVINO Model Server) 추가, ADR-012 Intel 전제로 갱신. `PRD.md`: 대상 플랫폼 x64/Intel NPU로 갱신.
+- `ADR.md`: ADR-001 Deprecated, ADR-018(OpenVINO Model Server) 추가, ADR-012 Intel 전제로 갱신. `PRD.md`: 대상 플랫폼 x64/Intel NPU로 갱신.
 
 ## 이전 수정(v0.3.3)에 포함된 내용
 

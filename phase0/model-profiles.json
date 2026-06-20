@@ -34,6 +34,7 @@
       "target_device": "NPU",
       "artifact": {
         "source": "OpenVINO Model Hub / optimum-cli export openvino",
+        "hf_id": "Qwen/Qwen3-4B-Instruct-2507",
         "local_dir": ".models/ovms/qwen3-4b-instruct-2507",
         "note": "Intel NPU용 OpenVINO IR(.xml/.bin)로 export 후 이 profile을 그대로 사용한다. `optimum-cli export openvino --model Qwen/Qwen3-4B-Instruct-2507 --weight-format int4`로 IR 확보."
       },

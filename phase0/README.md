@@ -2,7 +2,7 @@
 
 Phase 0의 목적은 Gloss 본 구현 전에 Intel Core Ultra 358H(Intel AI Boost NPU) 장비에서 후보 백엔드와 모델이 실제로 NPU(device=NPU)에 적재되고 실행되는지 확인하는 것이다. 이 단계는 기능 구현이 아니라 **게이트 검증**이다.
 
-> 기기 변경 이력: 이전 Snapdragon X Plus(Hexagon NPU, npurun/Genie/QNN) 경로는 deprecated다(ADR-001 → ADR-016). Hexagon 시절 검증 기록은 `phase0/verification-notes/2026-06-09-real-device.md`에 보존한다.
+> 기기 변경 이력: 이전 Snapdragon X Plus(Hexagon NPU, npurun/Genie/QNN) 경로는 deprecated다(ADR-001 → ADR-018). Hexagon 시절 검증 기록은 `phase0/verification-notes/2026-06-09-real-device.md`에 보존한다.
 
 ## 산출물
 

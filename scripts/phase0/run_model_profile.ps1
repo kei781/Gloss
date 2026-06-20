@@ -78,6 +78,22 @@ if ([string]::IsNullOrWhiteSpace($runtimeModel)) {
     throw "Profile '$profileName' does not define runtime_model."
 }
 
+$sourceModel = ""
+if ($profileJson.artifact -and $profileJson.artifact.hf_id) {
+    $sourceModel = [string]$profileJson.artifact.hf_id
+}
+if (
+    [string]::IsNullOrWhiteSpace($sourceModel) -and
+    $profileJson.artifact -and
+    $profileJson.artifact.source -and
+    ([string]$profileJson.artifact.source) -match "^[^/\s]+/[^/\s]+$"
+) {
+    $sourceModel = [string]$profileJson.artifact.source
+}
+if ([string]::IsNullOrWhiteSpace($sourceModel) -and $runtimeModel -match "^[^/\s]+/[^/\s]+$") {
+    $sourceModel = $runtimeModel
+}
+
 $ovmsPathValue = Get-EnvValue -Names @("GLOSS_PHASE0_OVMS_PATH", "OVMS_PATH")
 if ([string]::IsNullOrWhiteSpace($ovmsPathValue) -and $configJson.backend.ovms_path) {
     $ovmsPathValue = [string]$configJson.backend.ovms_path
@@ -138,10 +154,12 @@ switch ($Action) {
         )
     }
     "pull" {
-        # OVMS HuggingFace pull/export: source_model은 artifact.source의 HF id이거나 runtime_model.
+        if ([string]::IsNullOrWhiteSpace($sourceModel)) {
+            throw "Profile '$profileName' does not define an HF repo id for OVMS pull. Add artifact.hf_id (for example, Qwen/Qwen3-4B-Instruct-2507) or pass a profile whose runtime_model is already an owner/repo id."
+        }
         $arguments = @(
             "--pull",
-            "--source_model", $runtimeModel,
+            "--source_model", $sourceModel,
             "--model_repository_path", $modelsDir,
             "--target_device", $targetDevice,
             "--task", "text_generation"
@@ -157,6 +175,9 @@ log "model:    $runtimeModel"
 log "backend:  $profileBackend"
 log "status:   $($profileJson.status)"
 log "ovms:     $ovmsPath"
+if ($Action -eq "pull") {
+    log "source:   $sourceModel"
+}
 log "device:   $targetDevice"
 log "models:   $modelsDir"
 log "rest_port:$restPort"
