@@ -13,6 +13,7 @@ dependencies = []
 gloss-text = "gloss.text.cli:main"
 gloss-visual = "gloss.visual.cli:main"
 gloss-watch = "gloss.visual.watch_cli:main"
+gloss-dashboard = "gloss.dashboard.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
