@@ -6,7 +6,7 @@
 |---|---|
 | 버전 | v0.4.0 |
 | 작성일 | 2026-06-20 |
-| 변경 | v0.4.0: 기기 변경(Snapdragon X Plus → Intel Core Ultra 358H). NPU 백엔드를 npurun/Genie/QNN(Hexagon, deprecated)에서 **OpenVINO Model Server(OVMS, device=NPU)**로 전환, 플랫폼 ARM64 → x64. (ADR-001 deprecated, ADR-016 추가) v0.3.3: Phase 0 디렉토리 구조, `log()` 단일 출력 계약, env 기반 key/model 관리 추가. v0.3.2: 모델 프로파일 기반 교체 구조 추가. v0.3.1: NPU 검증 게이트 직접 증거화, CPU/GPU 보조 작업 범위 정리, 성공 기준 정량화. (v0.3: 프로젝트명 **Gloss** 확정 + tagline 추가. v0.2: 백엔드·모델 평가 반영, 모델 사이징·Visual 2-경로·유튜브 비목표화) |
+| 변경 | v0.4.0: 기기 변경(Snapdragon X Plus → Intel Core Ultra 358H). NPU 백엔드를 npurun/Genie/QNN(Hexagon, deprecated)에서 **OpenVINO Model Server(OVMS, device=NPU)**로 전환, 플랫폼 ARM64 → x64. (ADR-001 deprecated, ADR-018 추가) v0.3.5: Phase 4 대시보드(CLI 1차) 연결, FR-D3를 psutil에서 Win32 직접 호출로 갱신(ADR-017). v0.3.4: Phase 3 영역 감시 산출물 연결, 경량 OCR(Windows.Media.Ocr, ADR-016) 채택. v0.3.3: Phase 0 디렉토리 구조, `log()` 단일 출력 계약, env 기반 key/model 관리 추가. v0.3.2: 모델 프로파일 기반 교체 구조 추가. v0.3.1: NPU 검증 게이트 직접 증거화, CPU/GPU 보조 작업 범위 정리, 성공 기준 정량화. (v0.3: 프로젝트명 **Gloss** 확정 + tagline 추가. v0.2: 백엔드·모델 평가 반영, 모델 사이징·Visual 2-경로·유튜브 비목표화) |
 | 작성자 | 호크 (노상운) |
 | 상태 | Draft — **Phase 0 검증 통과 전 본 구현 착수 금지** |
 | 대상 플랫폼 | Windows 11 x64 (Intel Core Ultra 358H / Intel AI Boost NPU / 32GB) |
@@ -18,7 +18,7 @@
 
 - 클라우드 번역기(구글/DeepL)는 프라이버시·오프라인·문학 번역 품질에서 아쉽다.
 - 게임 텍스트는 DirectX로 화면에 픽셀로 렌더되어 접근성 API·텍스트 추출이 통하지 않는다 → **픽셀 OCR이 유일한 공통 입력 경로**.
-- 노트북에 Intel AI Boost NPU(Core Ultra 358H)가 있다. PC NPU LLM 경로는 일반 GGUF 런타임(Ollama/llama.cpp/LM Studio)으로는 NPU를 쓰지 못하고 CPU로 떨어진다. Intel NPU를 실제로 쓰려면 **OpenVINO**(IR 모델 + `device=NPU`) 경로여야 하며, 이를 OpenAI 호환 HTTP로 노출하는 **OpenVINO Model Server(OVMS)**를 백엔드로 쓴다. (이전 Snapdragon/Hexagon 시절의 npurun/Genie/QNN 경로는 deprecated — ADR-001/016.)
+- 노트북에 Intel AI Boost NPU(Core Ultra 358H)가 있다. PC NPU LLM 경로는 일반 GGUF 런타임(Ollama/llama.cpp/LM Studio)으로는 NPU를 쓰지 못하고 CPU로 떨어진다. Intel NPU를 실제로 쓰려면 **OpenVINO**(IR 모델 + `device=NPU`) 경로여야 하며, 이를 OpenAI 호환 HTTP로 노출하는 **OpenVINO Model Server(OVMS)**를 백엔드로 쓴다. (이전 Snapdragon/Hexagon 시절의 npurun/Genie/QNN 경로는 deprecated — ADR-001/018.)
 
 목표는 **NPU를 LLM/VLM 추론에 전담**시켜 CPU/GPU를 본 작업(게임 등)에 남겨두고, 로컬·오프라인·프라이빗하게 번역을 제공하는 도구다.
 
@@ -32,7 +32,7 @@
 **비목표 (지금 안 함)**
 - **실시간 흐르는 자막(유튜브 라이브 캡션식)** — 캡처-번역 레이턴시가 흐름을 못 따라감 → Windows Live Captions에 위임. (ADR-014)
 - **12B+ 모델 구동** — 속도·NPU 빌드 부재로 이 노트북엔 부적합. 해당 용도는 dGPU(RTX 5080) 기기. (ADR-012)
-- **GGUF/LiteRT 런타임의 NPU 가속에 의존** — Intel NPU(OpenVINO) 경로를 쓰지 못하고 CPU/GPU로 떨어짐. (ADR-016)
+- **GGUF/LiteRT 런타임의 NPU 가속에 의존** — Intel NPU(OpenVINO) 경로를 쓰지 못하고 CPU/GPU로 떨어짐. (ADR-018)
 - 클라우드 모델 / 모바일·타 OS 지원.
 - 대량 웹 스크래핑·재배포 (개인 독서 용도 한정).
 - 즉시(instant) 모델 핫스왑.
@@ -74,10 +74,10 @@
 ### 5.3 대시보드
 - **FR-D1 모델 정보**: 적재 모델명·양자화·컨텍스트 길이·백엔드·엔드포인트·업타임.
 - **FR-D2 추론 메트릭**: 프리필 TTFT, 프리필 tok/s, 디코드 tok/s(실시간 그래프), 토큰 in/out, end-to-end 레이턴시, 누적 토큰·요청수·에러수.
-- **FR-D3 시스템**: CPU% / RAM (psutil). **CPU 유휴 = NPU 가동의 보조 증거**로 노출 (단독 판정 근거 아님, ADR-009).
+- **FR-D3 시스템**: CPU% / RAM (Win32 API 직접 호출 — ctypes, ADR-017; psutil 불요). **CPU 유휴 = NPU 가동의 보조 증거**로 노출 (단독 판정 근거 아님, ADR-009).
 - **FR-D4 NPU%(선택)**: 제품 대시보드에서는 PDH perf counter로 시도. 불가 시 생략하고 tok/s + CPU 유휴로 대체. 단, Phase 0 검증 게이트는 별도의 직접 증거를 요구한다. (ADR-009)
 - **FR-D5 모델 셀렉터(선택)**: 드롭다운 → 언로드 → 적재(수초 로딩 상태 표시). instant 아님. 사이즈 티어(빠른 소형 ↔ 품질 4B) 전환도 겸함. 선택지는 모델 프로파일 목록을 기준으로 구성한다. (ADR-010)
-- **FR-D6 silent CPU fallback 감지**: NPU%를 읽을 수 있는 환경에서 생성 중 NPU% 0이면 "CPU fallback 중" 경고 노출. NPU%를 못 읽으면 백엔드 로그/trace 기반 검증 결과를 함께 표시한다. (ADR-009)
+- **FR-D6 silent CPU fallback 감지**: NPU%를 읽을 수 있는 환경에서 생성 중 NPU% 0이면 "CPU fallback 중" 경고 노출. NPU%를 못 읽으면 백엔드 로그/trace 기반 검증 결과를 함께 표시한다. Phase 4(1차)는 생성 구간 평균 CPU% ≥ 임계값(기본 65%) 휴리스틱을 보조 증거 경고로 제공하고(`gloss-dashboard`), NPU counter 직접 감지는 Phase 5 FR-D4 연결 시 제공한다. (ADR-009)
 
 > 모델 사이징: Visual 기본 **Qwen3-VL-4B**(필요 시 다운시프트), Text 짧은 번역은 **소형(≤1.7B)** 우선. 디코드 속도가 모델 크기에 반비례하므로 용례별로 사이즈를 분리한다. (ADR-012)
 
@@ -121,7 +121,11 @@
 - **Phase 1 — Text 엔진**: OCR 불확실성 없어 결과물 가장 빨리. URL→추출→번역→리더. (FR-T1, FR-T4) — *호출 경로 계측 훅을 여기서부터 심는다.*
 - **Phase 2 — Visual 온디맨드**: WGC 캡처 → VLM(또는 OCR+소형 LLM) → 오버레이. (FR-V1, FR-V2, FR-V5, FR-V6)
 - **Phase 3 — 영역 감시**: diff 기반 continuous(느린 전환 한정). (FR-V3)
-- **Phase 4 — 대시보드**: Phase 1부터 심어둔 계측 훅 가시화 + psutil + fallback 감지. (FR-D1~FR-D3, FR-D6)
+  - 실행/한계는 `docs/phase3-region-watch.md`. 자동 텍스트 추출은 경량 OCR(Windows.Media.Ocr, ADR-016)을 쓰고, OCR 텍스트가 직전과 같으면 재번역하지 않는다.
+  - OCR은 CPU helper(NFR-1 예외)이며, 사용 언어는 설치된 Windows 언어팩 OCR에 종속(일본어는 별도 설치).
+- **Phase 4 — 대시보드**: Phase 1부터 심어둔 계측 훅 가시화 + 시스템 샘플러(ADR-017) + fallback 감지. (FR-D1~FR-D3, FR-D6)
+  - 1차는 CLI(`gloss-dashboard`, `docs/phase4-dashboard.md`) — 요약(`--once`)과 라이브 tail. PyQt6 패널은 같은 집계 모듈 위에 본 구현에서 올린다.
+  - FR-D6은 생성 구간 평균 CPU% 휴리스틱(보조 증거)으로 1차 제공, NPU counter 직접 감지는 Phase 5 FR-D4에서 연결.
 - **Phase 5 — 선택 기능**: NPU%, 모델 셀렉터, PDF/스캔 폴백, 페이지네이션. (FR-D4, FR-D5, FR-T2, FR-T3)
 
 > 각 Phase 종료 시 커밋.
@@ -141,4 +145,4 @@
 - **R5 모델 적재 비용**: NPU 그래프 컴파일·적재 수초 → 스왑은 reload형으로 한정.
 - **R6 성능 미달 체감**: decode가 bandwidth-bound라 기대만큼 안 빠름(4B ~15 tok/s 수준, 비주얼 캡처당 수초). → 모델 축소·출력 제약(FR-V6)·타이트 크롭으로 완화, 용례별 사이즈 분리.
 
-> **해결된 평가(기록)**: GGUF/LiteRT(Intel NPU 미지원), Gemma 4 12B(속도·Intel NPU IR 빌드/검증 부재로 기기 부적합)는 평가 후 제외. 근거는 ADR-012 / ADR-016 참조. Snapdragon/Hexagon(npurun/Genie/QNN) 경로는 기기 변경으로 deprecated — ADR-001 참조.
+> **해결된 평가(기록)**: GGUF/LiteRT(Intel NPU 미지원), Gemma 4 12B(속도·Intel NPU IR 빌드/검증 부재로 기기 부적합)는 평가 후 제외. 근거는 ADR-012 / ADR-018 참조. Snapdragon/Hexagon(npurun/Genie/QNN) 경로는 기기 변경으로 deprecated — ADR-001 참조.

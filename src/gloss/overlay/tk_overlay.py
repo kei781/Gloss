@@ -2,9 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import ctypes
-import tkinter as tk
+import queue
+import threading
+from typing import TYPE_CHECKING, Callable
 
 from gloss.log import log
+
+if TYPE_CHECKING:
+    import tkinter as tk
 
 
 @dataclass(frozen=True)
@@ -36,6 +41,93 @@ def show_overlay_text(
     duration_s: float = 6.0,
     opacity: float = 0.88,
 ) -> None:
+    root, _label = _build_overlay_window(text, geometry=geometry, opacity=opacity)
+    root.after(max(1, int(duration_s * 1000)), root.destroy)
+    log("overlay shown", x=geometry.x, y=geometry.y, width=geometry.width, height=geometry.height)
+    root.mainloop()
+
+
+class OverlayController:
+    """Persistent click-through overlay updated from a worker thread.
+
+    Tk must run on the main thread on Windows, so `run()` owns the Tk
+    mainloop while `worker` runs on a daemon thread and pushes updates
+    through the thread-safe `show()` / `close()` methods.
+    """
+
+    _CLOSE = object()
+
+    def __init__(
+        self,
+        *,
+        geometry: OverlayGeometry,
+        opacity: float = 0.88,
+        poll_ms: int = 100,
+        initial_text: str = "Gloss watch...",
+    ):
+        self.geometry = geometry
+        self.opacity = opacity
+        self.poll_ms = max(10, poll_ms)
+        self.initial_text = initial_text
+        self._queue: "queue.Queue[object]" = queue.Queue()
+
+    def show(self, text: str) -> None:
+        self._queue.put(text)
+
+    def close(self) -> None:
+        self._queue.put(self._CLOSE)
+
+    def run(self, worker: Callable[[], None]) -> None:
+        root, label = _build_overlay_window(
+            self.initial_text,
+            geometry=self.geometry,
+            opacity=self.opacity,
+        )
+        closed = threading.Event()
+
+        def poll() -> None:
+            # Re-arm in a finally: Tk swallows callback exceptions, and a
+            # single failure must not stop the queue drain or the close path.
+            try:
+                while True:
+                    item = self._queue.get_nowait()
+                    if item is self._CLOSE:
+                        closed.set()
+                        root.destroy()
+                        return
+                    label.config(text=str(item))
+            except queue.Empty:
+                pass
+            finally:
+                if not closed.is_set():
+                    root.after(self.poll_ms, poll)
+
+        thread = threading.Thread(target=worker, daemon=True)
+        root.after(self.poll_ms, poll)
+        thread.start()
+        log(
+            "overlay controller started",
+            x=self.geometry.x,
+            y=self.geometry.y,
+            width=self.geometry.width,
+            height=self.geometry.height,
+        )
+        try:
+            root.mainloop()
+        except KeyboardInterrupt:
+            if not closed.is_set():
+                root.destroy()
+            raise
+
+
+def _build_overlay_window(
+    text: str,
+    *,
+    geometry: OverlayGeometry,
+    opacity: float,
+) -> tuple["tk.Tk", "tk.Label"]:
+    import tkinter as tk
+
     try:
         root = tk.Tk()
     except tk.TclError as exc:
@@ -63,9 +155,7 @@ def show_overlay_text(
 
     root.update_idletasks()
     _make_click_through(root)
-    root.after(max(1, int(duration_s * 1000)), root.destroy)
-    log("overlay shown", x=geometry.x, y=geometry.y, width=geometry.width, height=geometry.height)
-    root.mainloop()
+    return root, label
 
 
 def _make_click_through(root: tk.Tk) -> None:

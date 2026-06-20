@@ -10,14 +10,14 @@
 |---|---|---|
 | v0.4.0 | 2026-06-20 | 호크 (노상운) |
 
-> v0.4.0: 기기 변경(Snapdragon X Plus → Intel Core Ultra 358H). ADR-001(Hexagon/npurun) **Deprecated** 처리, **ADR-016**(Intel NPU 추론 백엔드: OpenVINO Model Server) 추가. ADR-012를 Intel NPU(OpenVINO) 전제로 갱신. v0.3.3: Phase 0 디렉토리 구조, `log()` 단일 출력 계약, env 기반 key/model 관리 추가. v0.3.2: 모델 프로파일 기반 교체 구조 추가. v0.3.1: NPU 검증 게이트 직접 증거화, CPU/GPU 보조 작업 범위 정리, 성공 기준 정량화. v0.3: 프로젝트명 **Gloss** 확정 + tagline 추가. (v0.2: ADR-001/003/009/010 갱신, ADR-012(모델 사이징)·013(Visual 2-경로)·014(실시간 자막 비목표) 추가.)
+> v0.4.0: 기기 변경(Snapdragon X Plus → Intel Core Ultra 358H). ADR-001(Hexagon/npurun) **Deprecated** 처리, **ADR-018**(Intel NPU 추론 백엔드: OpenVINO Model Server) 추가, ADR-012를 Intel NPU(OpenVINO) 전제로 갱신. v0.3.5: ADR-017(시스템 메트릭을 psutil 대신 Win32 ctypes로) 추가. v0.3.4: ADR-016(경량 OCR로 Windows.Media.Ocr 채택) 추가. v0.3.3: Phase 0 디렉토리 구조, `log()` 단일 출력 계약, env 기반 key/model 관리 추가. v0.3.2: 모델 프로파일 기반 교체 구조 추가. v0.3.1: NPU 검증 게이트 직접 증거화, CPU/GPU 보조 작업 범위 정리, 성공 기준 정량화. v0.3: 프로젝트명 **Gloss** 확정 + tagline 추가. (v0.2: ADR-001/003/009/010 갱신, ADR-012(모델 사이징)·013(Visual 2-경로)·014(실시간 자막 비목표) 추가.)
 
 ---
 
 ## ADR-001 — NPU 추론 백엔드: npurun (primary), NexaSDK / ONNX+QNN (alternatives). LiteRT·GGUF 런타임 기각
-**Status**: ~~Accepted~~ → **Deprecated (2026-06-20, ADR-016으로 대체)**
+**Status**: ~~Accepted~~ → **Deprecated (2026-06-20, ADR-018로 대체)**
 
-> **Deprecation note**: 이 결정은 Snapdragon X Plus(Qualcomm Hexagon NPU) 전제다. 기기가 Intel Core Ultra 358H(Intel AI Boost NPU)로 변경되어 npurun/Genie/QNN/HTP 경로는 더 이상 동작하지 않는다. Intel NPU 추론 백엔드는 **ADR-016**(OpenVINO Model Server) 참조. 이 ADR은 Hexagon 시절 의사결정 기록으로만 보존한다.
+> **Deprecation note**: 이 결정은 Snapdragon X Plus(Qualcomm Hexagon NPU) 전제다. 기기가 Intel Core Ultra 358H(Intel AI Boost NPU)로 변경되어 npurun/Genie/QNN/HTP 경로는 더 이상 동작하지 않는다. Intel NPU 추론 백엔드는 **ADR-018**(OpenVINO Model Server) 참조. 이 ADR은 Hexagon 시절 의사결정 기록으로만 보존한다.
 
 **Context**: PC(Windows ARM)의 NPU LLM 경로는 모바일과 다르다.
 - **GGUF 런타임**(Ollama/llama.cpp/LM Studio)은 ARM에서 CPU-only — NPU 미사용.
@@ -109,12 +109,12 @@
 
 ---
 
-## ADR-009 — 대시보드 메트릭: 클라이언트측 호출 계측 + psutil. NPU%는 선택 + fallback 감지
+## ADR-009 — 대시보드 메트릭: 클라이언트측 호출 계측 + 시스템 샘플러(ADR-017). NPU%는 선택 + fallback 감지
 **Status**: Accepted
 
 **Context**: 앱 자체가 추론 호출 클라이언트라 TTFT·tok/s·토큰·레이턴시를 호출 경로에서 직접 확보 가능(백엔드 스크래핑 불필요). NPU 사용률은 Windows perf counter가 GPU와 같은 원리지만 counter set 이름이 비공개라 PDH로 읽기 까다롭고, ARM·신규 빌드라 불안정. 한편 "생성 중인데 NPU% 0"은 silent CPU fallback의 신호다.
 
-**Decision**: 핵심 메트릭은 **호출 경로 계측** + **psutil**(CPU%/RAM). 제품 대시보드의 NPU%는 PDH로 시도하되 실패 시 생략하고 **"tok/s 정상 + CPU 유휴"를 보조 지표**로 노출한다. 단, Phase 0 게이트에서는 tok/s + CPU 유휴만으로 합격시키지 않고, NPU counter 또는 Genie/QNN/HTP 로그·벤더 샘플 출력·ETW/perf trace 같은 직접 증거를 요구한다. NPU%를 읽을 수 있으면 **생성 중 0% = CPU fallback 경고**로 활용(FR-D6).
+**Decision**: 핵심 메트릭은 **호출 경로 계측** + **시스템 샘플러**(CPU%/RAM — 초안의 psutil은 ADR-017의 Win32 ctypes 구현으로 대체). 제품 대시보드의 NPU%는 PDH로 시도하되 실패 시 생략하고 **"tok/s 정상 + CPU 유휴"를 보조 지표**로 노출한다. 단, Phase 0 게이트에서는 tok/s + CPU 유휴만으로 합격시키지 않고, NPU counter 또는 Genie/QNN/HTP 로그·벤더 샘플 출력·ETW/perf trace 같은 직접 증거를 요구한다. NPU%를 읽을 수 있으면 **생성 중 0% = CPU fallback 경고**로 활용(FR-D6).
 
 **Consequences**: 메트릭 대부분 무비용. 제품 런타임에서는 NPU% 누락 리스크를 우회 지표로 흡수하되, 최초 게이트는 직접 증거로 닫는다. 계측 훅은 Phase 1부터 심어 둠.
 
@@ -186,7 +186,29 @@
 
 ---
 
-## ADR-016 — Intel NPU 추론 백엔드: OpenVINO Model Server (OVMS) GenAI, device=NPU. npurun/Genie/QNN(ADR-001) 대체
+## ADR-016 — 경량 OCR: Windows.Media.Ocr (OS 내장). Tesseract·외부 OCR 모델 기각
+**Status**: Accepted (Phase 3 실기에서 en-US/ko 확인, ja는 언어팩 설치 후 검증)
+
+**Context**: ADR-013의 "경량 OCR + 소형 LLM" 경로와 영역 감시(FR-V3)는 자동 OCR이 필요하다. VLM bundle은 미확보 상태(Phase 0 노트). 후보: Tesseract(ARM64 빌드/배포 부담, 한국어·일본어 품질 편차), PaddleOCR 등 모델 기반(ARM64 휠·모델 관리 부담, R4), **Windows.Media.Ocr**(Windows 10+ 내장 WinRT API, 언어팩 단위 설치, 무의존성).
+
+**Decision**: 경량 OCR은 **Windows.Media.Ocr**을 채택한다. PowerShell WinRT 헬퍼(`scripts/phase3/ocr_image_text.ps1`) + Python 래퍼(`gloss.visual.ocr.WindowsOcr`)로 캡처 PNG를 인식한다. OCR은 **CPU helper**로 NFR-1의 명시적 예외이며, 번역 LLM은 그대로 NPU 백엔드를 쓴다. `ja`/`zh` 계열은 OCR이 단어 사이에 공백을 넣으므로 래퍼가 줄 단위로 공백을 제거한다.
+
+**Consequences**: 외부 바이너리·모델 배포 없이 OCR 확보, ARM64 휠 리스크(R4) 회피. 단 인식 언어가 **설치된 언어팩의 OCR 기능**에 종속된다(실기 현재 en-US/ko만 — ja는 `Add-WindowsCapability -Online -Name "Language.OCR~~~ja-JP~0.0.1.0"` 필요, 관리자 권한). 스타일라이즈드 게임 폰트 인식률은 VLM 대비 낮을 수 있으며, VLM bundle 확보 시 같은 엔진 계약에 VLM 경로를 연결해 비교한다(ADR-013). OCR 호출당 PowerShell 프로세스 기동 비용(수백 ms)은 느린 전환 감시 용례에서는 허용 범위다.
+
+---
+
+## ADR-017 — 시스템 메트릭: Win32 API 직접 호출(ctypes). psutil 기각
+**Status**: Accepted (Phase 4 실기 확인)
+
+**Context**: FR-D3는 CPU%/RAM 노출을 요구하며 PRD 초안은 psutil을 가정했다. 그러나 psutil은 외부 휠 의존이고, 본 프로젝트의 다른 모든 경로는 표준 라이브러리만 쓴다(ARM64 휠 리스크 R4 회피가 반복된 원칙). 필요한 값은 CPU%와 RAM 두 가지뿐이다.
+
+**Decision**: 시스템 메트릭은 **ctypes로 Win32 API를 직접 호출**한다 — CPU%는 `GetSystemTimes` 연속 샘플 델타, RAM은 `GlobalMemoryStatusEx`. 구현은 `gloss.system.WindowsSystemSampler`. psutil은 채택하지 않는다.
+
+**Consequences**: 무의존성 유지, ARM64 휠 확보 문제 원천 차단. 프로세스별 CPU 분해 같은 psutil 고급 기능은 없지만 FR-D3 범위(전역 CPU/RAM + 보조 증거 노출)에는 충분하다. CPU%는 두 샘플 사이 구간 값이라 첫 샘플은 n/a다. Windows 전용 구현이며 플랫폼 확장은 비목표(NFR-4)라 문제 없다.
+
+---
+
+## ADR-018 — Intel NPU 추론 백엔드: OpenVINO Model Server (OVMS) GenAI, device=NPU. npurun/Genie/QNN(ADR-001) 대체
 **Status**: Accepted (Phase 0 Intel 358H 실기 재검증 필요)
 
 **Context**: 기기가 Snapdragon X Plus(Qualcomm Hexagon NPU)에서 **Intel Core Ultra 358H(Intel AI Boost NPU)**로 변경됐다(2026-06-20). 이로써 ADR-001의 전제(Hexagon, libGenie/QnnHtp.dll, npurun)가 전부 무효가 된다.
@@ -196,4 +218,4 @@
 
 **Decision**: Intel NPU 기본 백엔드는 **OVMS(OpenVINO GenAI, `--target_device NPU`)**. OpenAI 호환 엔드포인트(`http://127.0.0.1:8000/v3`)로 추상화해 프론트(Text/Visual 엔진)는 무변경. 모델은 OpenVINO IR(INT4)로 관리하고, 교체는 ADR-010대로 profile + active_model_profile로 처리한다. 폴백 후보 순서: **OVMS(OpenVINO GenAI) → standalone OpenVINO GenAI → ONNX Runtime + OpenVINO/DirectML EP.** GGUF/LiteRT는 NPU 미지원이라 계속 제외.
 
-**Consequences**: 백엔드 교체가 설정 한 줄(ADR-011 유지). x86-64 전환으로 ARM64 휠 리스크(R4)가 크게 완화된다(OpenVINO·PyQt6 x64 휠 가용). 단 vision encode가 NPU에 올라가는지(또는 GPU/CPU fallback인지)는 Intel NPU에서 다시 검증해야 하고, IR export·INT4 정확도·NPU 적재 한계(컨텍스트·동적 shape)는 Phase 0에서 새로 측정한다. Snapdragon 시절 tok/s·증거(2026-06-09 노트)는 이 기기 합격 근거로 쓰지 않는다.
+**Consequences**: 백엔드 교체가 설정 한 줄(ADR-011 유지). x86-64 전환으로 ARM64 휠 리스크(R4)가 크게 완화된다(OpenVINO·PyQt6 x64 휠 가용). 단 vision encode가 NPU에 올라가는지(또는 GPU/CPU fallback인지)는 Intel NPU에서 다시 검증해야 하고, IR export·INT4 정확도·NPU 적재 한계(컨텍스트·동적 shape)는 Phase 0에서 새로 측정한다. Snapdragon 시절 tok/s·증거(2026-06-09 노트)는 이 기기 합격 근거로 쓰지 않는다. ADR-016(Windows.Media.Ocr)·ADR-017(ctypes 메트릭)의 무의존성 원칙과 충돌하지 않는다(OVMS는 별도 백엔드 프로세스).

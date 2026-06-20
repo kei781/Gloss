@@ -12,6 +12,7 @@ from gloss.overlay.tk_overlay import OverlayError, OverlayGeometry, show_overlay
 from gloss.visual.capture import CaptureError, PowerShellScreenCapture
 from gloss.visual.engine import VisualEngine, VisualEngineError
 from gloss.visual.models import CaptureResult, Rect
+from gloss.visual.ocr import OcrError, WindowsOcr, ocr_metrics
 
 
 DEFAULT_PHASE2_METRICS = Path("runs/phase2/visual-metrics.jsonl")
@@ -29,6 +30,12 @@ def build_parser() -> argparse.ArgumentParser:
     ocr = parser.add_mutually_exclusive_group()
     ocr.add_argument("--ocr-text", help="Text already extracted from the captured region.")
     ocr.add_argument("--ocr-file", type=Path, help="UTF-8 text file with OCR output.")
+    ocr.add_argument(
+        "--ocr-backend",
+        choices=["windows"],
+        help="Run OCR on the captured image (requires --capture-rect).",
+    )
+    parser.add_argument("--ocr-language", help="OCR language tag, e.g. ko, en-US, ja.")
     parser.add_argument("--config", type=Path, help="Config JSON path.")
     parser.add_argument("--env-file", type=Path, help="Env file path.")
     parser.add_argument("--profile", help="Model profile override.")
@@ -54,16 +61,30 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         source_text = read_ocr_text(args)
-        if source_text is None and not args.dry_run:
+        if args.ocr_backend and not args.capture_rect:
+            raise VisualEngineError("--ocr-backend requires --capture-rect.")
+        if source_text is None and not args.ocr_backend and not args.dry_run:
             raise VisualEngineError(
-                "VLM/OCR image path is not wired yet. Provide --ocr-text or --ocr-file."
+                "VLM image input is not wired yet. Provide --ocr-text, --ocr-file "
+                "or --ocr-backend windows."
             )
         capture = capture_if_requested(args)
+        ocr_result = None
+        if source_text is None and args.ocr_backend == "windows" and capture is not None:
+            ocr_result = WindowsOcr(language=args.ocr_language).recognize(
+                capture.image_path
+            )
+            source_text = ocr_result.text.strip()
+            if not source_text:
+                raise VisualEngineError(
+                    "Windows OCR found no text in the captured region."
+                )
         if source_text is None and args.dry_run and capture is not None:
             source_text = f"Captured screen region: {capture.image_path}"
         if source_text is None:
             raise VisualEngineError(
-                "VLM/OCR image path is not wired yet. Provide --ocr-text or --ocr-file."
+                "VLM image input is not wired yet. Provide --ocr-text, --ocr-file "
+                "or --ocr-backend windows."
             )
 
         config = load_runtime_config(
@@ -99,10 +120,13 @@ def main(argv: list[str] | None = None) -> int:
             source_text,
             capture=capture,
             stream=not args.no_stream,
+            input_mode="windows_ocr" if ocr_result is not None else "ocr_text",
+            metrics_extra={"ocr": ocr_metrics(ocr_result)} if ocr_result else None,
         )
     except (
         BackendError,
         CaptureError,
+        OcrError,
         OverlayError,
         ValueError,
         VisualEngineError,
