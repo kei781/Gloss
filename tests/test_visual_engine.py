@@ -49,6 +49,49 @@ class VisualEngineTest(unittest.TestCase):
         self.assertIn('"phase": 2', record)
         self.assertIn('"engine": "visual"', record)
 
+    def test_metrics_phase_and_input_mode_override(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            metrics_path = root / "watch-metrics.jsonl"
+            config = RuntimeConfig(
+                profile="test",
+                model="test-model",
+                base_url="http://127.0.0.1:11435/v1",
+                api_key="local",
+                metrics_path=metrics_path,
+                max_tokens=128,
+                temperature=0.0,
+                timeout_s=1.0,
+                config_path=None,
+                env_file=None,
+            )
+            client = OpenAIChatClient(
+                base_url=config.base_url,
+                api_key=config.api_key,
+                model=config.model,
+                timeout_s=config.timeout_s,
+            )
+            engine = VisualEngine(
+                config=config,
+                client=client,
+                metrics=MetricsRecorder(metrics_path),
+                dry_run=True,
+            )
+
+            with contextlib.redirect_stderr(io.StringIO()):
+                engine.translate_ocr_text(
+                    "Visible text.",
+                    input_mode="watch_ocr",
+                    phase=3,
+                    metrics_extra={"watch": {"iteration": 7}},
+                )
+
+            record = metrics_path.read_text(encoding="utf-8")
+
+        self.assertIn('"phase": 3', record)
+        self.assertIn('"inputMode": "watch_ocr"', record)
+        self.assertIn('"iteration": 7', record)
+
 
 if __name__ == "__main__":
     unittest.main()

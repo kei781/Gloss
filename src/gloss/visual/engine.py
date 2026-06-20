@@ -37,6 +37,9 @@ class VisualEngine:
         *,
         capture: CaptureResult | None = None,
         stream: bool = True,
+        input_mode: str = "ocr_text",
+        phase: int = 2,
+        metrics_extra: dict[str, object] | None = None,
     ) -> VisualTranslation:
         clean_source = source_text.strip()
         if not clean_source:
@@ -59,12 +62,12 @@ class VisualEngine:
                 max_tokens=self.config.max_tokens,
             )
 
-        self.metrics.write(
+        row: dict[str, object] = (
             {
                 "requestId": request_id,
-                "phase": 2,
+                "phase": phase,
                 "engine": "visual",
-                "inputMode": "ocr_text",
+                "inputMode": input_mode,
                 "modelProfile": self.config.profile,
                 "model": self.config.model,
                 "backendBaseUrl": self.config.base_url,
@@ -75,6 +78,9 @@ class VisualEngine:
                 "generation": asdict(result),
             }
         )
+        if metrics_extra:
+            row.update(metrics_extra)
+        self.metrics.write(row)
         log("visual translation completed", request_id=request_id)
         return VisualTranslation(
             translated_text=result.text.strip(),
