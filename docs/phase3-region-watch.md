@@ -19,7 +19,7 @@ Phase 3은 사용자가 지정한 화면 영역을 주기적으로 캡처하고,
 .\.venv-arm64\Scripts\python.exe -m pip install -e .
 ```
 
-`gloss-watch` 콘솔 스크립트가 추가된다. 스크립트 경로(`scripts/phase3/ocr_image_text.ps1`)는 저장소 루트 기준 상대 경로이므로 **저장소 루트에서 실행**한다.
+`gloss-watch` 콘솔 스크립트가 추가된다. Windows OCR helper는 패키지 데이터로 포함되므로 설치 후 어느 작업 디렉터리에서든 실행할 수 있다. 저장소에서 helper만 직접 점검할 때는 `scripts/phase3/ocr_image_text.ps1` wrapper를 사용할 수 있다.
 
 ## OCR 언어 준비
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from importlib import resources
 import json
 from pathlib import Path
 import subprocess
@@ -10,10 +11,12 @@ from typing import Any, Callable
 from gloss.log import log
 
 
-# Anchored to the repo root (src/gloss/visual/ -> repo) so gloss-watch works
-# from any cwd; the capture helper path is still cwd-relative (pre-existing).
-DEFAULT_OCR_SCRIPT = (
-    Path(__file__).resolve().parents[3] / "scripts" / "phase3" / "ocr_image_text.ps1"
+DEFAULT_OCR_SCRIPT = Path(
+    str(
+        resources.files("gloss.visual")
+        .joinpath("resources")
+        .joinpath("ocr_image_text.ps1")
+    )
 )
 SPACELESS_LANGUAGE_PREFIXES = ("ja", "zh")
 
@@ -36,7 +39,7 @@ class OcrResult:
 
 
 class WindowsOcr:
-    """Windows.Media.Ocr wrapper via scripts/phase3/ocr_image_text.ps1.
+    """Windows.Media.Ocr wrapper via the packaged PowerShell helper.
 
     The OCR runs on CPU and is the sanctioned lightweight helper from
     ADR-013/NFR-1; LLM translation stays on the NPU backend.

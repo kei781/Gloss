@@ -136,8 +136,17 @@ class WindowsOcrTest(unittest.TestCase):
                 os.chdir(temp_dir)
                 ocr = WindowsOcr()
                 self.assertTrue(ocr.script_path.is_file(), str(ocr.script_path))
+                self.assertIn("resources", ocr.script_path.parts)
             finally:
                 os.chdir(original_cwd)
+
+    def test_repo_script_wrapper_points_at_packaged_helper(self) -> None:
+        repo_root = Path(__file__).resolve().parents[1]
+        wrapper = repo_root / "scripts" / "phase3" / "ocr_image_text.ps1"
+        wrapper_text = wrapper.read_text(encoding="utf-8")
+
+        self.assertIn("src\\gloss\\visual\\resources\\ocr_image_text.ps1", wrapper_text)
+        self.assertTrue(WindowsOcr().script_path.is_file())
 
     def test_ocr_metrics_shape(self) -> None:
         run, _calls = _fake_runner(stdout=_payload())
