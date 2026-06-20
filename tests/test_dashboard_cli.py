@@ -49,9 +49,11 @@ class FakeSampler:
 class DashboardCliTest(unittest.TestCase):
     def setUp(self) -> None:
         self.probe_urls: list[str] = []
+        self.probe_keys: list[str | None] = []
 
         def fake_probe(base_url, **kwargs):
             self.probe_urls.append(base_url)
+            self.probe_keys.append(kwargs.get("api_key"))
             return BackendStatus(up=True, models=["phi-3.5-mini"], error=None)
 
         for patch in (
@@ -130,6 +132,37 @@ class DashboardCliTest(unittest.TestCase):
                 ):
                     dashboard_cli.main(self._args(temp_dir, "--once"))
                 self.assertEqual(self.probe_urls[-1], dashboard_cli.DEFAULT_BASE_URL)
+
+    def test_api_key_env_precedence(self) -> None:
+        env = {
+            "GLOSS_PHASE4_API_KEY": "phase4-key",
+            "GLOSS_PHASE1_API_KEY": "phase1-key",
+            "GLOSS_PHASE0_API_KEY": "phase0-key",
+            "OPENAI_API_KEY": "openai-key",
+        }
+        order = [
+            ("GLOSS_PHASE4_API_KEY", "phase4-key"),
+            ("GLOSS_PHASE1_API_KEY", "phase1-key"),
+            ("GLOSS_PHASE0_API_KEY", "phase0-key"),
+            ("OPENAI_API_KEY", "openai-key"),
+        ]
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with mock.patch.dict(os.environ, env, clear=True):
+                for name, expected in order:
+                    self.probe_keys.clear()
+                    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(
+                        io.StringIO()
+                    ):
+                        dashboard_cli.main(self._args(temp_dir, "--once"))
+                    self.assertEqual(self.probe_keys[-1], expected)
+                    os.environ.pop(name, None)
+
+                self.probe_keys.clear()
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(
+                    io.StringIO()
+                ):
+                    dashboard_cli.main(self._args(temp_dir, "--once"))
+                self.assertEqual(self.probe_keys[-1], "local")
 
     def test_sampler_failure_returns_error(self) -> None:
         def broken_sampler():

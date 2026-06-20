@@ -48,6 +48,19 @@ class AggregateTest(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(bad_lines, 2)
 
+    def test_load_metrics_rows_keeps_unicode_line_separators_in_json(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "metrics.jsonl"
+            row = _row("text", 1)
+            row["sourceText"] = "alpha\u2028beta\u2029gamma"
+            path.write_text(json.dumps(row, ensure_ascii=False) + "\n", encoding="utf-8")
+
+            rows, bad_lines = load_metrics_rows([path])
+
+        self.assertEqual(bad_lines, 0)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["sourceText"], "alpha\u2028beta\u2029gamma")
+
     def test_summarize_groups_by_engine_and_phase(self) -> None:
         rows = [
             _row("text", 1),

@@ -85,7 +85,16 @@ def main(argv: list[str] | None = None) -> int:
         )
         or DEFAULT_BASE_URL
     )
-    api_key = args.api_key or env_value("GLOSS_PHASE0_API_KEY", "OPENAI_API_KEY") or "local"
+    api_key = (
+        args.api_key
+        or env_value(
+            "GLOSS_PHASE4_API_KEY",
+            "GLOSS_PHASE1_API_KEY",
+            "GLOSS_PHASE0_API_KEY",
+            "OPENAI_API_KEY",
+        )
+        or "local"
+    )
     metrics_paths = args.metrics or DEFAULT_METRICS
 
     try:

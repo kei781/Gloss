@@ -49,8 +49,8 @@ def load_metrics_rows(paths: list[Path]) -> tuple[list[dict[str, Any]], int]:
     for path in paths:
         if not path.exists():
             continue
-        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-            line = line.strip()
+        for raw_line in path.read_bytes().split(b"\n"):
+            line = raw_line.decode("utf-8", errors="replace").strip()
             if not line:
                 continue
             try:

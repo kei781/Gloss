@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 import time
 from typing import Any, Callable, Protocol
@@ -29,11 +30,11 @@ class JsonlTail:
     def __init__(self, path: Path):
         self.path = path
         self._offset = 0
-        self._file_id: tuple[int, int] | None = None
+        self._file_id: tuple[int, ...] | None = None
         try:
             stat = path.stat()
             self._offset = path.read_bytes().rfind(b"\n") + 1
-            self._file_id = (stat.st_dev, stat.st_ino)
+            self._file_id = _file_id_from_stat(stat)
         except OSError:
             pass
 
@@ -47,7 +48,7 @@ class JsonlTail:
         except OSError:
             return []
 
-        file_id = (stat.st_dev, stat.st_ino)
+        file_id = _file_id_from_stat(stat)
         if self._file_id is not None and file_id != self._file_id:
             self._offset = 0  # delete-and-recreate rotation: new file identity
         self._file_id = file_id
@@ -73,7 +74,7 @@ class JsonlTail:
         self._offset += last_newline + 1
 
         rows: list[dict[str, Any]] = []
-        for raw_line in complete.splitlines():
+        for raw_line in complete.split(b"\n"):
             line = raw_line.decode("utf-8", errors="replace").strip()
             if not line:
                 continue
@@ -84,6 +85,14 @@ class JsonlTail:
             if isinstance(row, dict):
                 rows.append(row)
         return rows
+
+
+def _file_id_from_stat(stat: os.stat_result) -> tuple[int, ...]:
+    file_id = (stat.st_dev, stat.st_ino)
+    if os.name == "nt":
+        ctime_ns = getattr(stat, "st_ctime_ns", int(stat.st_ctime * 1_000_000_000))
+        return (*file_id, ctime_ns)
+    return file_id
 
 
 class CpuWindow:

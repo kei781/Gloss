@@ -4,13 +4,16 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 from gloss.backend.probe import BackendStatus
+from gloss.dashboard import live as live_module
 from gloss.dashboard.live import (
     CpuWindow,
     JsonlTail,
     LiveConfig,
     LiveDashboard,
+    _file_id_from_stat,
     assess_cpu_fallback,
 )
 from gloss.system import SystemSample
@@ -91,6 +94,21 @@ class JsonlTailTest(unittest.TestCase):
             rows = tail.read_new()
 
         self.assertEqual(rows, [{"b": 1}, {"b": 2}, {"b": 3}])
+
+    def test_windows_file_id_uses_creation_time_with_inode(self) -> None:
+        class Stat:
+            st_dev = 1
+            st_ino = 2
+            st_ctime = 3.0
+
+            def __init__(self, ctime_ns: int):
+                self.st_ctime_ns = ctime_ns
+
+        with mock.patch.object(live_module.os, "name", "nt"):
+            self.assertNotEqual(
+                _file_id_from_stat(Stat(100)),
+                _file_id_from_stat(Stat(200)),
+            )
 
 
 class CpuWindowTest(unittest.TestCase):
