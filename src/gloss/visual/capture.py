@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from importlib import resources
 import json
 from pathlib import Path
 import subprocess
@@ -10,13 +11,22 @@ from gloss.metrics import new_request_id
 from gloss.visual.models import CaptureResult, Rect
 
 
+DEFAULT_CAPTURE_SCRIPT = Path(
+    str(
+        resources.files("gloss.visual")
+        .joinpath("resources")
+        .joinpath("capture_screen_rect.ps1")
+    )
+)
+
+
 class CaptureError(RuntimeError):
     pass
 
 
 class PowerShellScreenCapture:
     def __init__(self, *, script_path: Path | None = None):
-        self.script_path = script_path or Path("scripts/phase2/capture_screen_rect.ps1")
+        self.script_path = script_path or DEFAULT_CAPTURE_SCRIPT
 
     def capture_rect(self, rect: Rect, *, output_dir: Path) -> CaptureResult:
         if not self.script_path.exists():

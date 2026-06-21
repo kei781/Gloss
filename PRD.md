@@ -8,7 +8,7 @@
 | 작성일 | 2026-06-20 |
 | 변경 | v0.4.0: 기기 변경(Snapdragon X Plus → Intel Core Ultra 358H). NPU 백엔드를 npurun/Genie/QNN(Hexagon, deprecated)에서 **OpenVINO Model Server(OVMS, device=NPU)**로 전환, 플랫폼 ARM64 → x64. (ADR-001 deprecated, ADR-018 추가) v0.3.5: Phase 4 대시보드(CLI 1차) 연결, FR-D3를 psutil에서 Win32 직접 호출로 갱신(ADR-017). v0.3.4: Phase 3 영역 감시 산출물 연결, 경량 OCR(Windows.Media.Ocr, ADR-016) 채택. v0.3.3: Phase 0 디렉토리 구조, `log()` 단일 출력 계약, env 기반 key/model 관리 추가. v0.3.2: 모델 프로파일 기반 교체 구조 추가. v0.3.1: NPU 검증 게이트 직접 증거화, CPU/GPU 보조 작업 범위 정리, 성공 기준 정량화. (v0.3: 프로젝트명 **Gloss** 확정 + tagline 추가. v0.2: 백엔드·모델 평가 반영, 모델 사이징·Visual 2-경로·유튜브 비목표화) |
 | 작성자 | 호크 (노상운) |
-| 상태 | Draft — **Phase 0 검증 통과 전 본 구현 착수 금지** |
+| 상태 | Phase 0 **Text 게이트 PASS** (2026-06-20, Intel 358H 실기, Qwen3-4B INT4 @ NPU 37.23 tok/s) → **Phase 1(Text) 착수 가능**. VLM(vision encode) 미검증 → **Phase 2(Visual) 착수 전 VLM 검증 선결**. 노트: `phase0/verification-notes/2026-06-20-intel358h.md` |
 | 대상 플랫폼 | Windows 11 x64 (Intel Core Ultra 358H / Intel AI Boost NPU / 32GB) |
 
 ---

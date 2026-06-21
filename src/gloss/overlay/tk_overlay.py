@@ -40,8 +40,11 @@ def show_overlay_text(
     geometry: OverlayGeometry,
     duration_s: float = 6.0,
     opacity: float = 0.88,
+    click_through: bool = False,
 ) -> None:
-    root, _label = _build_overlay_window(text, geometry=geometry, opacity=opacity)
+    root, _label = _build_overlay_window(
+        text, geometry=geometry, opacity=opacity, click_through=click_through
+    )
     root.after(max(1, int(duration_s * 1000)), root.destroy)
     log("overlay shown", x=geometry.x, y=geometry.y, width=geometry.width, height=geometry.height)
     root.mainloop()
@@ -64,11 +67,13 @@ class OverlayController:
         opacity: float = 0.88,
         poll_ms: int = 100,
         initial_text: str = "Gloss watch...",
+        click_through: bool = False,
     ):
         self.geometry = geometry
         self.opacity = opacity
         self.poll_ms = max(10, poll_ms)
         self.initial_text = initial_text
+        self.click_through = click_through
         self._queue: "queue.Queue[object]" = queue.Queue()
 
     def show(self, text: str) -> None:
@@ -82,6 +87,7 @@ class OverlayController:
             self.initial_text,
             geometry=self.geometry,
             opacity=self.opacity,
+            click_through=self.click_through,
         )
         closed = threading.Event()
 
@@ -125,6 +131,7 @@ def _build_overlay_window(
     *,
     geometry: OverlayGeometry,
     opacity: float,
+    click_through: bool = False,
 ) -> tuple["tk.Tk", "tk.Label"]:
     import tkinter as tk
 
@@ -154,11 +161,16 @@ def _build_overlay_window(
     label.pack(fill="both", expand=True)
 
     root.update_idletasks()
-    _make_click_through(root)
+    # Click-through is opt-in: it needs WS_EX_LAYERED|WS_EX_TRANSPARENT, and the
+    # layered alpha must be (re)asserted via SetLayeredWindowAttributes *after*
+    # the ex-style change or the window stops compositing its text. Default
+    # overlays skip this entirely so the subtitle text always renders.
+    if click_through:
+        _make_click_through(root, opacity=opacity)
     return root, label
 
 
-def _make_click_through(root: tk.Tk) -> None:
+def _make_click_through(root: tk.Tk, *, opacity: float = 0.88) -> None:
     hwnd = int(root.winfo_id())
     user32 = ctypes.windll.user32
     get_window_long = user32.GetWindowLongPtrW
@@ -176,3 +188,17 @@ def _make_click_through(root: tk.Tk) -> None:
     current = int(get_window_long(hwnd, gwl_exstyle))
     updated = current | ws_ex_layered | ws_ex_transparent | ws_ex_toolwindow
     set_window_long(hwnd, gwl_exstyle, updated)
+
+    # Changing the ex-style drops the layered alpha Tk set via "-alpha", which
+    # leaves the window non-compositing (text invisible). Re-assert it directly.
+    set_layered = user32.SetLayeredWindowAttributes
+    set_layered.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_uint,
+        ctypes.c_ubyte,
+        ctypes.c_uint,
+    ]
+    set_layered.restype = ctypes.c_int
+    lwa_alpha = 0x00000002
+    alpha_byte = int(max(0.1, min(opacity, 1.0)) * 255)
+    set_layered(hwnd, 0, alpha_byte, lwa_alpha)
