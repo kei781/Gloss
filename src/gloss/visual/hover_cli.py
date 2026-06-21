@@ -139,6 +139,18 @@ def _default_overlay_geometry() -> OverlayGeometry:
     return OverlayGeometry(x=x, y=y, width=width, height=height)
 
 
+def _cleanup_capture_file(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except OSError as exc:
+        log(
+            "failed to remove hover capture file",
+            level="WARN",
+            path=str(path),
+            error=str(exc),
+        )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -260,34 +272,39 @@ def main(argv: list[str] | None = None) -> int:
     def handle_trigger() -> None:
         controller.show("● 캡처 중...")
         rect = _region_around_cursor(region_w, region_h)
+        capture = None
         try:
-            capture = capturer.capture_rect(rect, output_dir=capture_dir)
-        except (CaptureError, OSError) as exc:
-            controller.show(f"[캡처 실패] {exc}")
-            return
-        controller.show("● 글자 읽는 중 (OCR)...")
-        try:
-            ocr_result = ocr.recognize(capture.image_path)
-        except (OcrError, OSError) as exc:
-            controller.show(f"[OCR 실패] {exc}")
-            return
-        source_text = ocr_result.text.strip()
-        if not source_text:
-            controller.show("(이 영역에서 글자를 찾지 못했어요)")
-            return
-        controller.show("● 번역 중 (NPU)...")
-        try:
-            translated = engine.translate_ocr_text(
-                source_text,
-                capture=capture,
-                stream=not args.no_stream,
-                input_mode="windows_ocr",
-                metrics_extra={"ocr": ocr_metrics(ocr_result)},
-            )
-        except (BackendError, VisualEngineError, OSError) as exc:
-            controller.show(f"[번역 실패] {exc}")
-            return
-        controller.show(translated.translated_text.strip() or "(번역 결과 없음)")
+            try:
+                capture = capturer.capture_rect(rect, output_dir=capture_dir)
+            except (CaptureError, OSError) as exc:
+                controller.show(f"[캡처 실패] {exc}")
+                return
+            controller.show("● 글자 읽는 중 (OCR)...")
+            try:
+                ocr_result = ocr.recognize(capture.image_path)
+            except (OcrError, OSError) as exc:
+                controller.show(f"[OCR 실패] {exc}")
+                return
+            source_text = ocr_result.text.strip()
+            if not source_text:
+                controller.show("(이 영역에서 글자를 찾지 못했어요)")
+                return
+            controller.show("● 번역 중 (NPU)...")
+            try:
+                translated = engine.translate_ocr_text(
+                    source_text,
+                    capture=capture,
+                    stream=not args.no_stream,
+                    input_mode="windows_ocr",
+                    metrics_extra={"ocr": ocr_metrics(ocr_result)},
+                )
+            except (BackendError, VisualEngineError, OSError) as exc:
+                controller.show(f"[번역 실패] {exc}")
+                return
+            controller.show(translated.translated_text.strip() or "(번역 결과 없음)")
+        finally:
+            if capture is not None:
+                _cleanup_capture_file(capture.image_path)
 
     stop = threading.Event()
 

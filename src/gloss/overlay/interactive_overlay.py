@@ -32,6 +32,7 @@ _LWA_ALPHA = 0x00000002
 
 class InteractiveOverlay:
     _CLOSE = object()
+    _TOGGLE_LOCK = object()
 
     def __init__(
         self,
@@ -62,9 +63,7 @@ class InteractiveOverlay:
         self._queue.put(self._CLOSE)
 
     def toggle_lock(self) -> None:
-        root = getattr(self, "_root", None)
-        if root is not None:
-            root.after(0, self._toggle_lock)
+        self._queue.put(self._TOGGLE_LOCK)
 
     # --- main thread ---
     def run(self, worker: Callable[[], None]) -> None:
@@ -136,6 +135,9 @@ class InteractiveOverlay:
                         closed.set()
                         root.destroy()
                         return
+                    if item is self._TOGGLE_LOCK:
+                        self._toggle_lock()
+                        continue
                     self._label.config(text=str(item))
             except queue.Empty:
                 pass
