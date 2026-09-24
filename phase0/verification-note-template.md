@@ -6,7 +6,7 @@
 |---|---|
 | 검증일 |  |
 | 검증자 |  |
-| 장비 | Intel Core Ultra 358H / Intel AI Boost NPU / 32GB |
+| 장비 | Intel Core Ultra X7 358H / Intel AI Boost NPU / 32GB |
 | OS 빌드 |  |
 | 드라이버/런타임 |  |
 | 최종 판정 | Pass / Fail / Partial |

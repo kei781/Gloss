@@ -45,7 +45,7 @@ class OpenAIChatClient:
     def complete(
         self,
         *,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
         max_tokens: int,
         temperature: float,
         stream: bool = True,

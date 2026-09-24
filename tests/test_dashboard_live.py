@@ -15,6 +15,7 @@ from gloss.dashboard.live import (
     LiveDashboard,
     _file_id_from_stat,
     assess_cpu_fallback,
+    assess_npu_fallback,
 )
 from gloss.system import SystemSample
 
@@ -129,6 +130,13 @@ class CpuWindowTest(unittest.TestCase):
 
 
 class AssessCpuFallbackTest(unittest.TestCase):
+    def test_npu_zero_requires_two_samples(self) -> None:
+        row = {"generation": {"token_count_source": "usage"}}
+        self.assertFalse(assess_npu_fallback(row, 0.0, 1))
+        self.assertTrue(assess_npu_fallback(row, 0.0, 2))
+        self.assertFalse(assess_npu_fallback(row, 12.0, 2))
+        self.assertFalse(assess_npu_fallback({"generation": {"token_count_source": "dry_run"}}, 0.0, 2))
+
     def test_high_cpu_flags(self) -> None:
         row = {"generation": {"token_count_source": "usage"}}
 

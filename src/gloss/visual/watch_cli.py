@@ -9,7 +9,7 @@ from gloss.config import load_runtime_config
 from gloss.log import log
 from gloss.metrics import MetricsRecorder, now_iso
 from gloss.overlay.tk_overlay import OverlayController, OverlayError, OverlayGeometry
-from gloss.visual.capture import CaptureError, PowerShellScreenCapture
+from gloss.visual.capture import CaptureError, make_screen_capture
 from gloss.visual.engine import VisualEngine, VisualEngineError
 from gloss.visual.models import CaptureResult, Rect
 from gloss.visual.ocr import OcrError, OcrResult, WindowsOcr, ocr_metrics
@@ -38,6 +38,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--watch-rect",
         required=True,
         help="Screen rect to watch as X,Y,WIDTH,HEIGHT.",
+    )
+    parser.add_argument(
+        "--capture-backend", choices=["auto", "wgc", "dxgi", "gdi"], default="auto",
+        help="Capture with WGC, DXGI, or GDI; auto tries them in that order.",
     )
     parser.add_argument("--interval", type=float, default=2.0, help="Seconds between captures.")
     parser.add_argument(
@@ -177,14 +181,14 @@ def main(argv: list[str] | None = None) -> int:
             )
 
         watcher = RegionWatcher(
-            capture=PowerShellScreenCapture(),
+            capture=make_screen_capture(args.capture_backend),
             ocr=ocr,
             translate=translate,
             config=watch_config,
             output_dir=args.capture_output,
             on_event=lambda event: _handle_event(event, args),
         )
-    except (ValueError, OverlayError) as exc:
+    except (ValueError, OverlayError, CaptureError) as exc:
         log(str(exc), level="ERROR")
         return 1
 

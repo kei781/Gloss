@@ -1,74 +1,51 @@
 # Phase 2 Visual On-Demand
 
-Phase 2는 화면 영역을 캡처하고, 보이는 텍스트를 한국어 번역으로 만들어 고정 오버레이에 표시하는 경로다.
+Visual 엔진은 지정 영역을 캡처한 뒤 한국어 번역을 출력하거나 오버레이에 표시한다. 입력은 두 가지다.
 
-현재 실기에서는 VLM bundle과 WGC Python binding이 아직 확보되지 않았기 때문에 첫 구현은 다음 범위를 제공한다.
-
-- rect 기반 화면 캡처 helper
-- OCR/VLM이 붙을 수 있는 Visual 엔진 인터페이스
-- OCR 텍스트 fallback 번역 경로
-- 클릭 통과 overlay 프로토타입
-- Phase 2 전용 metrics JSONL
+- **OCR + 텍스트 LLM**: Windows.Media.Ocr가 이미지를 읽고, 검증된 `qwen3-4b` OVMS 모델이 번역한다. 현재 실기 권장 경로다.
+- **VLM 이미지 직접 입력**: PNG/JPEG를 OpenAI 호환 `image_url` data URL로 OVMS에 보낸다. 클라이언트 연결은 완료됐지만 Qwen3-VL-4B의 Intel NPU vision encode와 속도는 아직 검증되지 않았다.
 
 ## 설치
 
-`pyproject.toml`에 `gloss-visual` 콘솔 스크립트가 추가되었으므로 editable install을 다시 실행한다.
-
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -e .
+.\.venv\Scripts\python.exe -m pip install -e '.[capture]'
 ```
 
-## 캡처 Dry Run
+`capture` extra는 x64 DXcam의 WinRT(Windows.Graphics.Capture)·DXGI 백엔드와 Pillow를 설치한다. 기본 `--capture-backend auto`는 WGC → DXGI → GDI 순서로 시도한다. `--capture-backend wgc`와 `--capture-backend dxgi`는 해당 경로의 실패를 바로 표시한다. GPU 캡처는 현재 주 모니터 기준이며, 다른 모니터의 영역은 GDI fallback을 사용한다.
 
-현재 캡처 helper는 개발용 `gdi-copy-from-screen` backend다. 전체화면 DirectX 검증용 WGC backend는 다음 보강 대상이다.
-Codex 샌드박스나 비대화형 세션에서는 `CopyFromScreen`이 `The handle is invalid`로 실패할 수 있으므로,
-캡처 검증은 실제 사용자 데스크톱 PowerShell에서 실행한다.
-이 helper는 stdout JSON을 UTF-8로 고정하고, 배율 디스플레이의 좌표 어긋남을 줄이기 위해
-per-monitor DPI awareness를 시도한다.
+## OCR 경로
 
 ```powershell
 .\.venv\Scripts\gloss-visual.exe `
-  --dry-run `
-  --capture-rect "100,100,800,260" `
-  --output .\runs\phase2\capture-dry-run.md
+  --capture-rect "100,600,900,200" `
+  --ocr-backend windows --ocr-language en-US `
+  --profile qwen3-4b --overlay
 ```
 
-캡처 이미지는 기본적으로 `runs/phase2/captures`에 저장된다.
-
-## OCR 텍스트 Fallback 번역
-
-VLM/OCR이 아직 연결되지 않은 상태에서는 보이는 텍스트를 `--ocr-text`나 `--ocr-file`로 넣어 visual 번역/메트릭/오버레이 경로를 검증한다.
+커서 주위 영역을 글로벌 핫키로 번역하려면:
 
 ```powershell
-.\.venv\Scripts\gloss-visual.exe `
-  --profile phi-3.5-mini `
-  --ocr-text "星間国家の悪徳領主として、俺は領民から搾取するつもりだった。" `
-  --output .\runs\phase2\visual-ocr-text-live.md
+.\.venv\Scripts\gloss-hover.exe --profile qwen3-4b --input-mode ocr --region "640,260"
 ```
 
-## Overlay 확인
+`Ctrl+Alt+Z` 번역, `Ctrl+Alt+L` 오버레이 잠금, `Ctrl+Alt+Q` 종료. 오버레이를 잠그면 클릭이 뒤 창으로 통과한다.
+
+## VLM 경로
+
+OVMS에 이미지 입력을 지원하는 모델이 적재된 상태에서 실행한다. `qwen3-vl-4b` 프로파일은 후보 설정이며, 먼저 Phase 0의 NPU vision encode 게이트를 통과해야 한다.
 
 ```powershell
-.\.venv\Scripts\gloss-visual.exe `
-  --dry-run `
-  --ocr-text "The old town slept under moonlight." `
-  --overlay `
-  --overlay-rect "80,720,1000,180" `
-  --overlay-duration 6
+.\.venv\Scripts\gloss-visual.exe --profile qwen3-vl-4b --image-file .\dialog.png
+.\.venv\Scripts\gloss-visual.exe --profile qwen3-vl-4b --capture-rect "100,600,900,200" --vlm --overlay
+.\.venv\Scripts\gloss-hover.exe --profile qwen3-vl-4b --input-mode vlm
 ```
 
-확인할 점:
+이미지 bytes는 base64로 요청에만 담기며, metrics JSONL에는 이미지 경로와 크기만 기록된다. 로컬 서버 주소를 사용한다. `--dry-run`으로 서버 없이 요청 분기와 출력 형식을 확인할 수 있다.
 
-- overlay가 지정 위치에 뜨는지
-- 항상 위에 보이는지
-- 마우스 클릭이 overlay 아래 창으로 통과하는지
-- 텍스트가 박스 안에서 읽을 수 있게 줄바꿈되는지
+## 확인할 점
 
-## Phase 2 이후 실기 체크
+- `--capture-backend wgc`로 게임 캡처 PNG에 대사창이 실제로 보이는지 확인한다. 캡처가 불가능한 전체화면 게임은 창/테두리 없는 창 모드로도 점검한다.
+- VLM 실기 검증에서는 OVMS 로그의 `EXECUTION_DEVICES: NPU`와 Intel AI Boost NPU LUID counter를 확인한다. `target_device=NPU` 설정만으로 vision encode의 NPU 실행을 단정하지 않는다.
+- 대사창 샘플 10개에서 8개 이상이 8초 이내, 최악 12초 이내이며 의미 보존·무부연 출력을 만족하는지 기록한다(PRD 성공 기준).
 
-- VN/RPG 대사창 샘플 10개를 준비한다.
-- `--capture-rect`가 대사창을 과하게 넓거나 좁게 잡지 않는지 확인한다.
-- 전체화면 DirectX 게임에서는 현재 GDI fallback이 검은 화면일 수 있다. 이 경우 WGC backend 구현 전까지 실패로 기록한다.
-- `--ocr-text` fallback으로 번역/오버레이가 8초 안에 나오는지 먼저 본다.
-- VLM bundle이 확보되면 image input backend를 같은 VisualEngine 계약에 연결한다.
-- metrics는 `runs/phase2/visual-metrics.jsonl`에서 확인한다.
+메트릭은 `runs/phase2/visual-metrics.jsonl`에 남는다.

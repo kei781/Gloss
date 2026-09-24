@@ -1,8 +1,20 @@
 import sys
+import json
 import time
 import unittest
 
-from gloss.system import CpuTimes, cpu_percent_between
+from gloss.system import CpuTimes, cpu_percent_between, npu_percent_from_counter_json
+
+
+class NpuCounterTest(unittest.TestCase):
+    def test_filters_intel_npu_luid_and_compute_engine(self) -> None:
+        samples = [
+            {"InstanceName": "pid_28192_luid_0x00000000_0x00011b60_phys_0_eng_0_engtype_compute", "CookedValue": 88.1},
+            {"InstanceName": "pid_31960_luid_0x00000000_0x000116de_phys_0_eng_0_engtype_compute", "CookedValue": 1.5},
+            {"InstanceName": "pid_28192_luid_0x00000000_0x00011b60_phys_0_eng_1_engtype_3d", "CookedValue": 2.0},
+        ]
+        self.assertEqual(npu_percent_from_counter_json(json.dumps(samples), 0x11B60), 88.1)
+        self.assertIsNone(npu_percent_from_counter_json(json.dumps(samples), 0x99999))
 
 
 class CpuPercentBetweenTest(unittest.TestCase):

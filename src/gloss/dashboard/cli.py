@@ -18,7 +18,7 @@ DEFAULT_METRICS = [
     Path("runs/phase2/visual-metrics.jsonl"),
     Path("runs/phase3/watch-metrics.jsonl"),
 ]
-DEFAULT_BASE_URL = "http://127.0.0.1:11435/v1"
+DEFAULT_BASE_URL = "http://127.0.0.1:8000/v3"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -60,6 +60,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--base-url", help="OpenAI-compatible base URL override.")
     parser.add_argument("--api-key", help="API key override.")
     parser.add_argument("--env-file", type=Path, help="Env file path.")
+    parser.add_argument(
+        "--npu-luid", help="Intel AI Boost LUID for direct GPU Engine compute counter, e.g. 0x11b60."
+    )
     return parser
 
 
@@ -97,8 +100,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     metrics_paths = args.metrics or DEFAULT_METRICS
 
+    npu_luid_text = args.npu_luid or env_value("GLOSS_NPU_LUID")
     try:
-        sampler = WindowsSystemSampler()
+        npu_luid = int(npu_luid_text, 0) if npu_luid_text else None
+    except ValueError:
+        log("invalid --npu-luid; expected an integer such as 0x11b60", level="ERROR")
+        return 1
+
+    try:
+        sampler = (
+            WindowsSystemSampler(npu_luid=npu_luid)
+            if npu_luid is not None else WindowsSystemSampler()
+        )
     except SystemMetricsError as exc:
         log(str(exc), level="ERROR")
         return 1

@@ -144,6 +144,8 @@ def format_summary(
             f"system: CPU {cpu} | RAM {system.ram_used_mb:.0f}/"
             f"{system.ram_total_mb:.0f} MB ({system.ram_percent:.0f}%)"
         )
+        if system.npu_percent is not None:
+            lines.append(f"Intel AI Boost NPU compute: {system.npu_percent:.1f}% (selected LUID)")
         lines.append("(CPU 유휴는 NPU 가동의 보조 증거 - 단독 판정 근거 아님, ADR-009)")
     lines.append(f"requests: {summary.total_requests}  bad_lines: {summary.bad_lines}")
     lines.append("")

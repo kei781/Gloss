@@ -7,7 +7,7 @@ param(
     [switch]$PrintOnly
 )
 
-# Intel Core Ultra 358H (Intel AI Boost NPU) 용 OpenVINO Model Server(OVMS) 드라이버.
+# Intel Core Ultra X7 358H (Intel AI Boost NPU) 용 OpenVINO Model Server(OVMS) 드라이버.
 # OVMS는 device=NPU로 OpenAI 호환 엔드포인트(/v3/chat/completions)를 제공한다.
 # Snapdragon/Hexagon(npurun) 시절 드라이버는 run_model_profile.npurun.ps1(DEPRECATED) 참조.
 # 단발 추론/벤치 측정은 scripts/phase0/measure_openai_backend.py로 수행한다.
@@ -68,6 +68,14 @@ if ($profileBackend -ne "ovms") {
         throw "Profile '$profileName' uses deprecated backend 'npurun' (Snapdragon/Hexagon). Intel NPU에서는 ovms profile을 쓰세요. Hexagon 재현이 필요하면 run_model_profile.npurun.ps1을 사용하세요."
     }
     throw "Profile '$profileName' uses backend '$profileBackend'. run_model_profile.ps1 only supports ovms (OpenVINO Model Server, Intel NPU) profiles."
+}
+
+$pipelineType = [string]$profileJson.serve.pipeline_type
+if ([string]::IsNullOrWhiteSpace($pipelineType)) {
+    $pipelineType = if ($profileJson.capabilities -contains "vision") { "VLM" } else { "LM" }
+}
+if ($pipelineType -notin @("LM", "VLM")) {
+    throw "Profile '$profileName' needs an NPU-compatible pipeline_type: LM or VLM."
 }
 
 $runtimeModel = Get-EnvValue -Names @("GLOSS_PHASE0_MODEL", "GLOSS_MODEL")
@@ -150,6 +158,7 @@ switch ($Action) {
             "--model_repository_path", $modelsDir,
             "--model_name", $runtimeModel,
             "--target_device", $targetDevice,
+            "--pipeline_type", $pipelineType,
             "--task", "text_generation"
         )
     }
@@ -161,9 +170,14 @@ switch ($Action) {
             "--pull",
             "--source_model", $sourceModel,
             "--model_repository_path", $modelsDir,
+            "--model_name", $runtimeModel,
             "--target_device", $targetDevice,
+            "--pipeline_type", $pipelineType,
             "--task", "text_generation"
         )
+        if (-not ($profileJson.artifact -and $profileJson.artifact.preconverted)) {
+            $arguments += @("--weight-format", "int4")
+        }
     }
     "show" {
         $arguments = @("--version")
@@ -177,8 +191,12 @@ log "status:   $($profileJson.status)"
 log "ovms:     $ovmsPath"
 if ($Action -eq "pull") {
     log "source:   $sourceModel"
+    if (-not ($profileJson.artifact -and $profileJson.artifact.preconverted)) {
+        log "pull requires an OVMS build with Python/Optimum export support for raw Hugging Face models" -level "WARN"
+    }
 }
 log "device:   $targetDevice"
+log "pipeline: $pipelineType"
 log "models:   $modelsDir"
 log "rest_port:$restPort"
 log "action:   $Action"

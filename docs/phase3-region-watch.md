@@ -16,7 +16,7 @@ Phase 3은 사용자가 지정한 화면 영역을 주기적으로 캡처하고,
 ## 설치
 
 ```powershell
-.\.venv-arm64\Scripts\python.exe -m pip install -e .
+.\.venv\Scripts\python.exe -m pip install -e .
 ```
 
 `gloss-watch` 콘솔 스크립트가 추가된다. Windows OCR helper는 패키지 데이터로 포함되므로 설치 후 어느 작업 디렉터리에서든 실행할 수 있다. 저장소에서 helper만 직접 점검할 때는 `scripts/phase3/ocr_image_text.ps1` wrapper를 사용할 수 있다.
@@ -42,7 +42,7 @@ Add-WindowsCapability -Online -Name "Language.OCR~~~ja-JP~0.0.1.0"
 ## Dry Run (백엔드 없이 캡처+OCR 루프 확인)
 
 ```powershell
-.\.venv-arm64\Scripts\gloss-watch.exe `
+.\.venv\Scripts\gloss-watch.exe `
   --watch-rect "100,600,900,200" `
   --dry-run `
   --max-iterations 3 `
@@ -55,15 +55,15 @@ Add-WindowsCapability -Online -Name "Language.OCR~~~ja-JP~0.0.1.0"
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\phase0\run_model_profile.ps1 `
-  -Profile phi-3.5-mini -Action serve
+  -Profile qwen3-4b -Action serve
 ```
 
 감시 시작 (Ctrl+C로 종료):
 
 ```powershell
-.\.venv-arm64\Scripts\gloss-watch.exe `
+.\.venv\Scripts\gloss-watch.exe `
   --watch-rect "100,600,900,200" `
-  --profile phi-3.5-mini `
+  --profile qwen3-4b `
   --ocr-language en-US `
   --overlay --overlay-rect "80,840,1000,160" `
   --output .\runs\phase3\watch-log.md
@@ -84,10 +84,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\phase0\run_model_profile.ps1 
 `gloss-visual`에도 `--ocr-backend windows`가 추가되어, `--ocr-text` 수동 입력 없이 캡처→OCR→번역이 한 번에 된다:
 
 ```powershell
-.\.venv-arm64\Scripts\gloss-visual.exe `
+.\.venv\Scripts\gloss-visual.exe `
   --capture-rect "100,600,900,200" `
   --ocr-backend windows --ocr-language en-US `
-  --profile phi-3.5-mini --overlay
+  --profile qwen3-4b --overlay
 ```
 
 ## 메트릭

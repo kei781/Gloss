@@ -22,7 +22,7 @@ from gloss.log import log
 from gloss.metrics import MetricsRecorder
 from gloss.overlay.interactive_overlay import InteractiveOverlay
 from gloss.overlay.tk_overlay import OverlayError, OverlayGeometry
-from gloss.visual.capture import CaptureError, PowerShellScreenCapture
+from gloss.visual.capture import CaptureError, make_screen_capture
 from gloss.visual.engine import VisualEngine, VisualEngineError
 from gloss.visual.models import Rect
 from gloss.visual.ocr import OcrError, WindowsOcr, ocr_metrics
@@ -176,6 +176,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--overlay-opacity", type=float, default=0.88)
     parser.add_argument("--ocr-language", default="en-US", help="OCR language tag, e.g. en-US, ja, ko.")
+    parser.add_argument(
+        "--input-mode", choices=["ocr", "vlm"], default="ocr",
+        help="Use Windows OCR plus a text model, or send the captured image to a VLM.",
+    )
+    parser.add_argument(
+        "--capture-backend", choices=["auto", "wgc", "dxgi", "gdi"], default="auto",
+        help="Capture with WGC, DXGI, or GDI; auto tries them in that order.",
+    )
     parser.add_argument("--poll-ms", type=int, default=60, help="Hotkey poll interval (ms).")
     parser.add_argument("--config", type=Path, help="Config JSON path.")
     parser.add_argument("--env-file", type=Path, help="Env file path.")
@@ -255,8 +263,12 @@ def main(argv: list[str] | None = None) -> int:
         metrics=MetricsRecorder(config.metrics_path),
         dry_run=False,
     )
-    capturer = PowerShellScreenCapture()
-    ocr = WindowsOcr(language=args.ocr_language)
+    try:
+        capturer = make_screen_capture(args.capture_backend)
+    except CaptureError as exc:
+        log(str(exc), level="ERROR")
+        return 1
+    ocr = WindowsOcr(language=args.ocr_language) if args.input_mode == "ocr" else None
     capture_dir = Path("runs/phase2/captures")
 
     controller = InteractiveOverlay(
@@ -279,25 +291,29 @@ def main(argv: list[str] | None = None) -> int:
             except (CaptureError, OSError) as exc:
                 controller.show(f"[캡처 실패] {exc}")
                 return
-            controller.show("● 글자 읽는 중 (OCR)...")
-            try:
-                ocr_result = ocr.recognize(capture.image_path)
-            except (OcrError, OSError) as exc:
-                controller.show(f"[OCR 실패] {exc}")
-                return
-            source_text = ocr_result.text.strip()
-            if not source_text:
-                controller.show("(이 영역에서 글자를 찾지 못했어요)")
-                return
-            controller.show("● 번역 중 (NPU)...")
-            try:
-                translated = engine.translate_ocr_text(
-                    source_text,
-                    capture=capture,
-                    stream=not args.no_stream,
-                    input_mode="windows_ocr",
-                    metrics_extra={"ocr": ocr_metrics(ocr_result)},
+            if args.input_mode == "vlm":
+                controller.show("● 이미지 번역 중 (VLM)...")
+                translate = lambda: engine.translate_image(
+                    capture.image_path, capture=capture, stream=not args.no_stream,
                 )
+            else:
+                controller.show("● 글자 읽는 중 (OCR)...")
+                try:
+                    ocr_result = ocr.recognize(capture.image_path)
+                except (OcrError, OSError) as exc:
+                    controller.show(f"[OCR 실패] {exc}")
+                    return
+                source_text = ocr_result.text.strip()
+                if not source_text:
+                    controller.show("(이 영역에서 글자를 찾지 못했어요)")
+                    return
+                controller.show("● 번역 중 (NPU)...")
+                translate = lambda: engine.translate_ocr_text(
+                    source_text, capture=capture, stream=not args.no_stream,
+                    input_mode="windows_ocr", metrics_extra={"ocr": ocr_metrics(ocr_result)},
+                )
+            try:
+                translated = translate()
             except (BackendError, VisualEngineError, OSError) as exc:
                 controller.show(f"[번역 실패] {exc}")
                 return

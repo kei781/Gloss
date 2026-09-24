@@ -3,7 +3,7 @@
   "default_profile": "qwen3-4b",
   "deprecated_backends": {
     "npurun": {
-      "reason": "기기가 Snapdragon X Plus(Hexagon NPU)에서 Intel Core Ultra 358H(Intel AI Boost NPU)로 변경됨 (2026-06-20). Qualcomm Genie/QNN/HTP 경로(npurun)는 Intel NPU에서 동작하지 않는다.",
+      "reason": "기기가 Snapdragon X Plus(Hexagon NPU)에서 Intel Core Ultra X7 358H(Intel AI Boost NPU)로 변경됨 (2026-06-20). Qualcomm Genie/QNN/HTP 경로(npurun)는 Intel NPU에서 동작하지 않는다.",
       "superseded_by": "ovms",
       "history_note": "Hexagon 시절 검증 기록은 phase0/verification-notes/2026-06-09-real-device.md와 deprecated profile(phi-3.5-mini-hexagon)에 보존한다."
     }
@@ -40,7 +40,8 @@
       },
       "serve": {
         "base_url": "http://127.0.0.1:8000/v3",
-        "command": "ovms --rest_port 8000 --model_repository_path .models/ovms --model_name qwen3-4b-instruct-2507 --target_device NPU --task text_generation"
+        "pipeline_type": "LM",
+        "command": "ovms --rest_port 8000 --model_repository_path .models/ovms --model_name qwen3-4b-instruct-2507 --target_device NPU --pipeline_type LM --task text_generation"
       },
       "measurement": {
         "runs": 3,
@@ -68,7 +69,8 @@
       },
       "serve": {
         "base_url": "http://127.0.0.1:8000/v3",
-        "command": "ovms --rest_port 8000 --model_repository_path .models/ovms --model_name phi-3.5-mini --target_device NPU --task text_generation"
+        "pipeline_type": "LM",
+        "command": "ovms --rest_port 8000 --model_repository_path .models/ovms --model_name phi-3.5-mini --target_device NPU --pipeline_type LM --task text_generation"
       },
       "measurement": {
         "runs": 3,
@@ -91,13 +93,16 @@
       "openvino_min": "2025.3",
       "target_device": "NPU",
       "artifact": {
-        "source": "OpenVINO Model Hub / optimum-cli export openvino",
+        "source": "OpenVINO Hub preconverted INT4 IR",
+        "hf_id": "OpenVINO/Qwen3-VL-4B-Instruct-int4-ov",
+        "preconverted": true,
         "local_dir": ".models/ovms/qwen3-vl-4b",
-        "note": "Visual 기본 후보. OpenVINO IR로 export 후 검증한다. vision encode가 NPU에 올라가는지(또는 GPU/CPU fallback인지) Phase 0에서 별도 확인한다."
+        "note": "Visual 기본 후보. OpenVINO 공식 INT4 IR을 pull할 수 있다. vision encode가 Intel X7 358H NPU에 올라가는지 Phase 0에서 별도 확인한다."
       },
       "serve": {
         "base_url": "http://127.0.0.1:8000/v3",
-        "command": "ovms --rest_port 8000 --model_repository_path .models/ovms --model_name qwen3-vl-4b --target_device NPU --task text_generation"
+        "pipeline_type": "VLM",
+        "command": "ovms --rest_port 8000 --model_repository_path .models/ovms --model_name qwen3-vl-4b --target_device NPU --pipeline_type VLM --task text_generation"
       },
       "measurement": {
         "runs": 3,
@@ -170,7 +175,7 @@
       "runtime_model": "phi-3.5-mini",
       "status": "deprecated",
       "deprecated": true,
-      "deprecation_note": "Snapdragon X Plus(Hexagon NPU) 시절 npurun + Genie/QNN/HTP 경로로 >5 tok/s를 통과한 검증 기록 보존용. 기기가 Intel Core Ultra 358H로 변경되어(2026-06-20) 더 이상 활성 경로가 아니다. 활성 경로는 'phi-3.5-mini'(ovms) 참조.",
+      "deprecation_note": "Snapdragon X Plus(Hexagon NPU) 시절 npurun + Genie/QNN/HTP 경로로 >5 tok/s를 통과한 검증 기록 보존용. 기기가 Intel Core Ultra X7 358H로 변경되어(2026-06-20) 더 이상 활성 경로가 아니다. 활성 경로는 'phi-3.5-mini'(ovms) 참조.",
       "capabilities": [
         "text"
       ],

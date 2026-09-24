@@ -1,6 +1,6 @@
 # Phase 0 NPU 검증 가이드
 
-Phase 0의 목적은 Gloss 본 구현 전에 Intel Core Ultra 358H(Intel AI Boost NPU) 장비에서 후보 백엔드와 모델이 실제로 NPU(device=NPU)에 적재되고 실행되는지 확인하는 것이다. 이 단계는 기능 구현이 아니라 **게이트 검증**이다.
+Phase 0의 목적은 Gloss 본 구현 전에 Intel Core Ultra X7 358H(Intel AI Boost NPU) 장비에서 후보 백엔드와 모델이 실제로 NPU(device=NPU)에 적재되고 실행되는지 확인하는 것이다. 이 단계는 기능 구현이 아니라 **게이트 검증**이다.
 
 > 기기 변경 이력: 이전 Snapdragon X Plus(Hexagon NPU, npurun/Genie/QNN) 경로는 deprecated다(ADR-001 → ADR-018). Hexagon 시절 검증 기록은 `phase0/verification-notes/2026-06-09-real-device.md`에 보존한다.
 
@@ -53,6 +53,10 @@ Phase 0 스크립트의 모든 콘솔 출력은 `log()` 함수를 통과한다.
 - CLI의 `--profile` 또는 PowerShell의 `-Profile`: 임시로 다른 모델을 고른다.
 
 기본 프로파일은 `qwen3-4b`이며, 런타임 모델명은 `qwen3-4b-instruct-2507`이다. Intel NPU에서 쓰려면 OpenVINO IR(.xml/.bin)로 export해야 한다(예: `optimum-cli export openvino --model Qwen/Qwen3-4B-Instruct-2507 --weight-format int4`). `phi-3.5-mini`는 텍스트 fallback 프로파일이며 Intel NPU(OVMS) 경로 재검증이 필요하다. Snapdragon/Hexagon 시절 검증본은 deprecated 프로파일 `phi-3.5-mini-hexagon`으로 보존한다.
+
+`run_model_profile.ps1`은 NPU용 OVMS 비배칭 파이프라인(`LM` 또는 `VLM`)을 명시한다. [OVMS 문서](https://docs.openvino.ai/2026/model-server/ovms_docs_troubleshooting.html)에 따르면 NPU에서 연속 배칭 파이프라인은 사용할 수 없다. `qwen3-vl-4b`는 OpenVINO의 사전 변환 INT4 모델을 pull하도록 설정했지만 X7 358H에서 vision encode가 NPU에 올라가는지는 아직 검증하지 않았다.
+
+`run_model_profile.ps1 -Action pull`은 OVMS의 `--pull --weight-format int4 --model_name <runtime_model>` 명령을 사용한다. Raw Hugging Face 모델을 INT4 OpenVINO IR로 변환하려면 Python/Optimum export 기능을 포함한 OVMS 빌드가 필요하다. 번들에 이 기능이 없으면 검증 노트의 `optimum-cli export openvino` 경로를 사용한다. `-PrintOnly`로 실행 전 명령을 확인할 수 있다.
 
 모델을 바꾸는 방법:
 

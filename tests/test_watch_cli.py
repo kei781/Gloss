@@ -164,8 +164,8 @@ class WatchCliTest(unittest.TestCase):
 
             with mock.patch.object(
                 watch_cli,
-                "PowerShellScreenCapture",
-                lambda: FakeCapture([b"frame-a"]),
+                "make_screen_capture",
+                lambda backend: FakeCapture([b"frame-a"]),
             ), mock.patch.object(
                 watch_cli,
                 "WindowsOcr",

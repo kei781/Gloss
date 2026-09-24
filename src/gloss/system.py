@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import ctypes
 from dataclasses import dataclass
+import json
+import re
+import subprocess
 import sys
 
 
@@ -24,6 +27,61 @@ class SystemSample:
     ram_used_mb: float
     ram_total_mb: float
     ram_percent: float
+    npu_percent: float | None = None
+
+
+def npu_percent_from_counter_json(payload: str, luid: int) -> float | None:
+    """Sum compute-engine samples for one LUID, excluding Arc GPU engines."""
+    try:
+        rows = json.loads(payload)
+    except (ValueError, TypeError):
+        return None
+    if isinstance(rows, dict):
+        rows = [rows]
+    if not isinstance(rows, list):
+        return None
+    total = 0.0
+    found = False
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        instance = str(row.get("InstanceName") or row.get("inst") or "").lower()
+        match = re.search(r"luid_0x([0-9a-f]+)_0x([0-9a-f]+)", instance)
+        if not match or "engtype_compute" not in instance:
+            continue
+        instance_luid = (int(match.group(1), 16) << 32) | int(match.group(2), 16)
+        if instance_luid != luid:
+            continue
+        value = row.get("CookedValue", row.get("val"))
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            total += max(0.0, float(value))
+            found = True
+    return min(100.0, total) if found else None
+
+
+class WindowsNpuSampler:
+    """Read Windows GPU Engine PDH counters for the Intel AI Boost LUID."""
+
+    def __init__(self, luid: int):
+        self.luid = luid
+
+    def sample(self) -> float | None:
+        command = (
+            "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; "
+            "$s=(Get-Counter '\\GPU Engine(*)\\Utilization Percentage' -MaxSamples 1).CounterSamples; "
+            "@($s | Select-Object InstanceName,CookedValue) | ConvertTo-Json -Compress"
+        )
+        try:
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", command],
+                capture_output=True, text=True, encoding="utf-8", timeout=5,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if result.returncode != 0:
+            return None
+        return npu_percent_from_counter_json(result.stdout, self.luid)
 
 
 def cpu_percent_between(first: CpuTimes, second: CpuTimes) -> float | None:
@@ -44,11 +102,12 @@ class WindowsSystemSampler:
     returns cpu_percent=None.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, npu_luid: int | None = None) -> None:
         if sys.platform != "win32":
             raise SystemMetricsError("WindowsSystemSampler requires Windows.")
         self._kernel32 = ctypes.windll.kernel32
         self._last_times: CpuTimes | None = None
+        self._npu = WindowsNpuSampler(npu_luid) if npu_luid is not None else None
 
     def sample(self) -> SystemSample:
         times = self._cpu_times()
@@ -64,6 +123,7 @@ class WindowsSystemSampler:
             ram_used_mb=used_mb,
             ram_total_mb=total_mb,
             ram_percent=percent,
+            npu_percent=self._npu.sample() if self._npu is not None else None,
         )
 
     def _cpu_times(self) -> CpuTimes:

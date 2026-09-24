@@ -9,12 +9,20 @@ description = "On-device translation overlay for Windows x64 Intel NPU workflows
 requires-python = ">=3.11"
 dependencies = []
 
+[project.optional-dependencies]
+capture = ["dxcam[winrt]>=0.3.0", "Pillow>=10"]
+pdf = ["pypdf>=5", "pypdfium2>=4", "Pillow>=10"]
+web = ["playwright>=1.50"]
+gui = ["PyQt6>=6.7"]
+
 [project.scripts]
 gloss-text = "gloss.text.cli:main"
+gloss-reader = "gloss.text.reader_gui:main"
 gloss-visual = "gloss.visual.cli:main"
 gloss-hover = "gloss.visual.hover_cli:main"
 gloss-watch = "gloss.visual.watch_cli:main"
 gloss-dashboard = "gloss.dashboard.cli:main"
+gloss-dashboard-gui = "gloss.dashboard.gui:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
