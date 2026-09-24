@@ -33,6 +33,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\phase0\run_model_profile.ps1 
 `qwen3-vl-4b`는 [OpenVINO의 사전 변환 INT4 IR](https://huggingface.co/OpenVINO/Qwen3-VL-4B-Instruct-int4-ov)을 pull하도록 설정했습니다. 약 3GB 모델 다운로드와 NPU 적재·vision encode 검증은 아직 수행되지 않았습니다.
 NPU 프로파일은 OVMS의 비배칭 `LM`/`VLM` 파이프라인을 명시합니다. [OVMS 문제 해결 문서](https://docs.openvino.ai/2026/model-server/ovms_docs_troubleshooting.html)에 따르면 NPU는 연속 배칭 파이프라인을 사용할 수 없습니다.
 
+한국어 품질 후보로 Gemma 4 E4B, 속도 후보로 E2B 프로파일을 추가했습니다. 두 모델은 아직 이 장비에서 NPU 적재와 한국어 번역 품질을 검증하지 않았으므로 기본값은 실측 기록이 있는 `qwen3-4b`입니다. Gemma 4에는 OVMS/OpenVINO 2026.4 이상과 지원되는 Optimum Intel 빌드가 필요합니다. 모델별 확인 절차와 공식 자료는 [Gemma 4 평가 노트](docs/gemma4-evaluation.md)를 참고하세요.
+
 다른 PowerShell에서:
 
 ```powershell

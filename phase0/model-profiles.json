@@ -140,27 +140,66 @@
         "output_file": "openai-qwen3.5-4b.jsonl"
       }
     },
-    "gemma-4-e4b": {
-      "display_name": "Gemma 4 E4B",
-      "backend": "tbd",
-      "runtime_model": "google/gemma-4-E4B-it",
-      "status": "future_multimodal_candidate",
+    "gemma-4-e2b": {
+      "display_name": "Gemma 4 E2B (NPU trial)",
+      "backend": "ovms",
+      "runtime_model": "gemma-4-e2b",
+      "status": "npu_validation_required",
       "capabilities": [
         "text",
-        "vision",
-        "audio"
+        "vision"
       ],
-      "quantization": "tbd",
+      "quantization": "INT4 symmetric, group size 128 (NPU export candidate)",
       "context_length": 128000,
+      "openvino_min": "2026.4.0",
+      "optimum_intel_min": "2.2.0",
       "target_device": "NPU",
       "artifact": {
-        "source": "Hugging Face / OpenVINO export",
-        "local_dir": ".models/gemma-4-e4b",
-        "note": "멀티모달 후보. Intel NPU(OpenVINO) runtime 적재와 CJK 번역 품질을 별도 검증한다."
+        "source": "Google Hugging Face original / OVMS Optimum Intel export",
+        "hf_id": "google/gemma-4-E2B-it",
+        "local_dir": ".models/ovms/gemma-4-e2b",
+        "pull_extra_quantization_params": "--sym --group-size 128 --ratio 1.0",
+        "note": "빠른 번역 후보. OVMS 2026.4+ Python/Optimum export 빌드와 Gemma 4 지원 Optimum Intel 2.2+ 필요. 공식 사전 변환 OpenVINO INT4 IR은 INT4_ASYM/group 128이므로 NPU 대칭 INT4 지침과 다르다. 이 raw-model export/OVMS VLM의 X7 358H NPU 적재·번역 품질은 미검증."
       },
       "serve": {
         "base_url": "http://127.0.0.1:8000/v3",
-        "command": "tbd"
+        "pipeline_type": "VLM",
+        "max_prompt_len": 2048,
+        "command": "ovms --rest_port 8000 --model_repository_path .models/ovms --model_name gemma-4-e2b --target_device NPU --pipeline_type VLM --task text_generation --max_prompt_len 2048"
+      },
+      "measurement": {
+        "runs": 3,
+        "max_tokens": 128,
+        "prompt": "Translate this sentence into natural Korean and output only the translation: The moonlight fell softly over the old town.",
+        "output_file": "openai-gemma-4-e2b.jsonl"
+      }
+    },
+    "gemma-4-e4b": {
+      "display_name": "Gemma 4 E4B (NPU trial)",
+      "backend": "ovms",
+      "runtime_model": "gemma-4-e4b",
+      "status": "npu_validation_required",
+      "capabilities": [
+        "text",
+        "vision"
+      ],
+      "quantization": "INT4 symmetric, group size 128 (NPU export candidate)",
+      "context_length": 128000,
+      "openvino_min": "2026.4.0",
+      "optimum_intel_min": "2.2.0",
+      "target_device": "NPU",
+      "artifact": {
+        "source": "Google Hugging Face original / OVMS Optimum Intel export",
+        "hf_id": "google/gemma-4-E4B-it",
+        "local_dir": ".models/ovms/gemma-4-e4b",
+        "pull_extra_quantization_params": "--sym --group-size 128 --ratio 1.0",
+        "note": "한국어 품질 우선 후보. E4B는 총 8B 파라미터(임베딩 포함)여서 NPU 메모리·속도를 실측해야 한다. 공식 사전 변환 INT4 IR은 실험적이며 INT4_ASYM/group 128이다. OVMS 2026.4+ 및 Gemma 4 지원 Optimum Intel 2.2+에서 raw export/OVMS VLM의 X7 358H NPU 적재·번역 품질은 미검증."
+      },
+      "serve": {
+        "base_url": "http://127.0.0.1:8000/v3",
+        "pipeline_type": "VLM",
+        "max_prompt_len": 2048,
+        "command": "ovms --rest_port 8000 --model_repository_path .models/ovms --model_name gemma-4-e4b --target_device NPU --pipeline_type VLM --task text_generation --max_prompt_len 2048"
       },
       "measurement": {
         "runs": 3,

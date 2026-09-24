@@ -24,7 +24,7 @@
 
 ## 2. 목표 / 비목표
 **목표**
-- LLM/VLM 추론(vision encode·번역·텍스트 생성)은 **≤4B 모델**로 NPU에서 수행. CPU/GPU는 캡처·렌더·계측(+ 선택적 경량 OCR) 등 가벼운 보조 작업으로 제한.
+- LLM/VLM 추론(vision encode·번역·텍스트 생성)은 **실기에서 적재·속도를 검증한 소형 모델**로 NPU에서 수행. CPU/GPU는 캡처·렌더·계측(+ 선택적 경량 OCR) 등 가벼운 보조 작업으로 제한.
 - 단일 파이프라인이 아닌 **두 엔진**으로 surface(게임/소설/PDF, 영상 일부)를 커버.
 - 게임자막 스타일의 고정 영역 오버레이 출력.
 - 운영 상태를 보는 대시보드 패널.
@@ -49,7 +49,7 @@
 
 ## 4. 핵심 개념 — 두 엔진
 - **Visual 엔진** (게임·영상): 두 가지 구현 경로 (ADR-013)
-  - *(기본)* **VLM 단일패스** — 캡처 → Qwen3-VL이 OCR+번역을 한 번에. 정확·간편.
+  - *(후보)* **VLM 단일패스** — 캡처 → Qwen3-VL 또는 Gemma 4 E4B/E2B가 OCR+번역을 한 번에. 각 모델의 vision encode NPU 실행은 검증 전.
   - *(속도 우선 / 탈출구)* **경량 OCR + 소형 텍스트 LLM** — 각 단계가 가벼워 전체가 더 빠를 수 있음. 게임이 답답하면 이쪽으로 전환. 단, 이 경로의 OCR은 CPU helper일 수 있으므로 NPU 전담 목표의 예외로 별도 측정한다.
 - **Text 엔진** (소설·텍스트 PDF): 네이티브 텍스트 추출 → 텍스트 LLM 번역 → 리더. OCR 미경유라 오인식 0·정확·고속.
 
@@ -79,7 +79,7 @@
 - **FR-D5 모델 셀렉터(선택)**: 드롭다운 → 언로드 → 적재(수초 로딩 상태 표시). instant 아님. 사이즈 티어(빠른 소형 ↔ 품질 4B) 전환도 겸함. 선택지는 모델 프로파일 목록을 기준으로 구성한다. (ADR-010)
 - **FR-D6 silent CPU fallback 감지**: Intel AI Boost LUID를 지정하면 GPU Engine compute 카운터를 생성 구간에 샘플링해 NPU 사용률이 1% 미만인 경우 경고한다. 카운터가 없으면 생성 구간 평균 CPU% ≥ 임계값(기본 65%) 휴리스틱을 보조 증거로 사용한다(`gloss-dashboard`). (ADR-009)
 
-> 모델 사이징: Visual 기본 **Qwen3-VL-4B**(필요 시 다운시프트), Text 짧은 번역은 **소형(≤1.7B)** 우선. 디코드 속도가 모델 크기에 반비례하므로 용례별로 사이즈를 분리한다. (ADR-012)
+> 모델 선택: 현재 실기 기준선은 Qwen3-4B INT4 텍스트 경로다. 한국어 품질 우선 후보 Gemma 4 E4B와 속도 후보 E2B를 NPU 적재·번역 품질·지연으로 비교한다. Visual VLM 경로는 별도 검증한다. (ADR-003/004/012)
 
 > 메트릭은 별도 수집기가 아니라 **앱이 곧 추론 클라이언트**라는 점을 이용해 호출 경로 계측으로 확보한다.
 
@@ -107,7 +107,7 @@
   - 검증 절차와 산출물은 `phase0/README.md`와 `phase0/verification-note-template.md`를 기준으로 남긴다.
   - Phase 0 산출물에는 `phase0/directory-structure.md`의 전체 디렉토리 구조 설계와 이번 수정 내역을 포함한다.
   - 스크립트 로그는 공통 `log()` 함수만 통과하고, 주요 key/base URL/model/profile/path는 env(`phase0/.env`, 예시는 `.env.example`)로 관리한다.
-  - 모델 후보는 `phase0/model-profiles.json`의 profile로 관리하고, 기본 목표는 `qwen3-4b`로 둔다.
+  - 모델 후보는 `phase0/model-profiles.json`의 profile로 관리한다. 검증된 기본값은 `qwen3-4b`이고 Gemma 4 E4B/E2B를 한국어 번역 후보로 평가한다(`docs/gemma4-evaluation.md`).
   - **검증 산출물**: 검증일, OS/드라이버/백엔드/모델 버전, 실행 명령, 로그/스크린샷, tok/s, CPU/RAM, NPU 사용 증거를 Phase 0 검증 노트로 남긴다.
   - **합격 기준**: ~4B 모델이 **> 5 tok/s** AND NPU 사용의 직접 증거 1개 이상.
     - 작업관리자/PDH counter가 읽히면 **NPU% > 0** 필수.
@@ -140,7 +140,7 @@
 ## 9. 리스크 & 오픈 이슈
 - **R1 Intel NPU 적재 게이팅**: VLM/대형 컨텍스트가 OpenVINO NPU plugin의 동적 shape·메모리 제약으로 NPU에 안 올라가고 GPU/CPU로 fallback할 수 있음 → IR export 옵션·정적 shape·INT4로 완화, Phase 0에서 확정.
 - **R2 VLM hallucination**: 저대비·산재 HUD 텍스트에서 누락/허위 생성 가능 → 구역 기반 + 고해상 캡처로 완화. 복불복 인정.
-- **R3 한국어 출력 품질**: OmniNeural는 영어 위주 → Qwen3-VL/Qwen3 채택으로 회피.
+- **R3 한국어 출력 품질**: Gemma 4 E4B/E2B와 Qwen3-4B를 같은 한국어 번역 샘플로 비교한다. 다국어 지원 자체를 번역 우위의 증거로 간주하지 않는다.
 - **R4 x64 휠**: PyQt6·OpenVINO·캡처·Playwright x64 가용성 확인(ARM64 대비 리스크 낮음). 불가 시 .NET WPF 대안.
 - **R5 모델 적재 비용**: NPU 그래프 컴파일·적재 수초 → 스왑은 reload형으로 한정.
 - **R6 성능 미달 체감**: Qwen3-4B 텍스트 디코드는 실측 37.23 tok/s였으나 VLM vision encode와 게임 캡처 전체 지연은 미측정. → 출력 제약(FR-V6)·타이트 크롭으로 완화하고 실기에서 전체 지연을 측정한다.

@@ -186,6 +186,9 @@ switch ($Action) {
         )
         if (-not ($profileJson.artifact -and $profileJson.artifact.preconverted)) {
             $arguments += @("--weight-format", "int4")
+            if ($profileJson.artifact.pull_extra_quantization_params) {
+                $arguments += @("--extra_quantization_params", [string]$profileJson.artifact.pull_extra_quantization_params)
+            }
         }
     }
     "show" {
@@ -204,6 +207,10 @@ if ($Action -eq "pull") {
         log "pull requires an OVMS build with Python/Optimum export support for raw Hugging Face models" -level "WARN"
     }
 }
+
+if ($Action -in @("serve", "pull") -and $profileJson.serve.max_prompt_len) {
+    $arguments += @("--max_prompt_len", [string]$profileJson.serve.max_prompt_len)
+}
 log "device:   $targetDevice"
 log "pipeline: $pipelineType"
 log "models:   $modelsDir"
@@ -212,7 +219,15 @@ log "rest_port:$restPort"
 log "action:   $Action"
 
 if ($PrintOnly) {
-    log "command: $ovmsPath $($arguments -join ' ')"
+    $displayArguments = foreach ($argument in $arguments) {
+        $value = [string]$argument
+        if ($value -match '\s') {
+            "'" + ($value -replace "'", "''") + "'"
+        } else {
+            $value
+        }
+    }
+    log "command: $ovmsPath $($displayArguments -join ' ')"
     exit 0
 }
 

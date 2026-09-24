@@ -41,27 +41,27 @@
 
 ---
 
-## ADR-003 — Visual 모델: Qwen3-VL-4B 기본. OmniNeural-4B·Gemma 4 12B 기각
-**Status**: Accepted
+## ADR-003 — Visual 모델: Qwen3-VL-4B 후보, Gemma 4 E4B/E2B 비교
+**Status**: Revised (2026-09-24; VLM NPU 실측 전)
 
 **Context**: 게임 폰트는 스타일라이즈드·반투명·저대비라 전통 OCR이 취약. VLM은 이미지를 통째로 이해해 더 강건. 소스가 일본어(라노벨·게임)면 CJK 강세 필요.
 - **OmniNeural-4B**: NPU 네이티브 멀티모달이나 영어 위주 최적화로 한국어 출력이 약함.
 - **Gemma 4 12B**: encoder-free + MTP로 아키텍처는 매력적이나 12B는 이 기기에 과대 — 상세는 ADR-012.
 
-**Decision**: Visual 기본은 **Qwen3-VL-4B**(CJK 강세, OCR+번역 단일 패스). 속도가 급하면 ADR-013의 경량 경로로 다운시프트. OmniNeural·Gemma 4 12B 미채택. (Gemma를 꼭 쓰려면 엣지 사이즈 E4B/E2B가 NPU 결에 맞으나, CJK 번역엔 Qwen3가 우세.)
+**Decision**: **Qwen3-VL-4B**와 **Gemma 4 E4B/E2B**를 Visual 후보로 비교한다. 한국어 품질은 동등 조건에서 실측하고, vision encoder의 NPU 실행을 별도 입증한다. 그 전의 실사용 경로는 Windows OCR + 검증된 Qwen3-4B 텍스트 모델이다. Gemma 4 12B와 OmniNeural-4B는 현재 후보에서 제외한다.
 
-**Consequences**: CJK·스타일 텍스트에 강함. 별도 OCR 단계 제거로 CPU 부하↓. 단 저대비·산재 HUD에서 hallucination 가능(R2) → 구역 기반 캡처로 완화.
+**Consequences**: 단일패스 VLM을 선택하면 OCR 단계를 줄일 수 있지만, 현 기기에서 VLM의 NPU 적재·속도는 확인해야 한다. 저대비·산재 HUD의 누락·환각 위험(R2)은 구역 기반 캡처와 샘플 평가로 확인한다.
 
 ---
 
-## ADR-004 — Text 모델: Qwen3 (짧은 번역은 소형 우선)
-**Status**: Accepted
+## ADR-004 — Text 모델: Gemma 4 E4B/E2B 품질 평가, Qwen3-4B 검증 기준선
+**Status**: Revised (2026-09-24; Gemma 4 NPU 실측 전)
 
-**Context**: 텍스트 경로는 비전 불필요. CJK·문학 번역 품질과 NPU 적재 가능성·속도가 우선. 디코드는 모델 크기에 반비례(ADR-012).
+**Context**: 텍스트 경로는 비전 불필요. CJK·문학 번역 품질과 NPU 적재 가능성·속도가 우선. 디코드 속도는 모델 크기와 메모리 대역폭의 영향을 받는다(ADR-012).
 
-**Decision**: Text 엔진은 **Qwen3 계열**. 짧은 번역(게임 대사 등)은 **소형(≤1.7B)** 우선, 긴 문학 번역은 4B까지. Phase 0 측정으로 확정.
+**Decision**: Gemma 4 **E4B-it**를 한국어 번역 품질 우선 후보, **E2B-it**를 속도 후보로 시험한다. 현재 기본 모델은 Intel NPU에서 이미 확인된 Qwen3-4B를 유지한다. 동일 입력의 한국어 품질, NPU 직접 증거, 지연을 비교한 뒤 기본 모델을 결정한다. 절차와 출처는 `docs/gemma4-evaluation.md`에 둔다.
 
-**Consequences**: 짧은 번역의 체감 속도 확보. 모델 다종 운용 → 스왑 비용 고려(ADR-010).
+**Consequences**: Gemma 4의 한국어 품질 가설을 검증할 수 있다. 모델 다종 운용에는 적재·스왑 비용이 따른다(ADR-010).
 
 ---
 
@@ -142,14 +142,14 @@
 
 ---
 
-## ADR-012 — 모델 사이징 정책: ≤4B, 용례별 우선 소형. "클수록 좋다" 기각
-**Status**: Accepted (2026-06-20 Intel NPU 전제로 갱신; ≤4B 결정 자체는 유지)
+## ADR-012 — 모델 사이징 정책: NPU 실측으로 선택
+**Status**: Revised (2026-09-24)
 
-**Context**: 디코드는 모델 크기와 메모리 대역폭의 영향을 받는다. 초기 계획의 4B INT4 ~15 tok/s는 추정치였고, Intel Core Ultra X7 358H 실기에서 Qwen3-4B-Instruct-2507 INT4는 평균 **37.23 tok/s**로 측정됐다(Phase 0 노트). 이 수치를 다른 모델이나 VLM에 일반화하지 않는다. 번역의 짧은 출력에 맞춰 ≤4B 모델을 우선 사용한다. **Gemma 4 12B**는 이 장비의 Intel NPU용 OpenVINO IR 적재 검증이 없어 활성 후보에서 제외한다.
+**Context**: 디코드는 모델 크기와 메모리 대역폭의 영향을 받는다. Intel Core Ultra X7 358H 실기에서 Qwen3-4B-Instruct-2507 INT4는 평균 **37.23 tok/s**로 측정됐다(Phase 0 노트). 이 수치를 Gemma 4나 VLM에 일반화하지 않는다. Gemma 4 E2B/E4B의 effective 파라미터는 2.3B/4.5B지만 임베딩 포함 총 파라미터는 5.1B/8B다. 따라서 기존의 단순한 '≤4B' 숫자만으로 NPU 메모리나 속도를 판단할 수 없다.
 
-**Decision**: 이 기기에서는 **≤4B만** 사용. 짧은 번역(게임 대사 등)은 **소형(0.6B~1.7B)** 우선, 정확도가 필요한 긴 문학은 4B. **양자화(Q4)** 를 속도 레버로 사용. 12B+ 는 채택하지 않고 필요 시 **dGPU(RTX 5080) 기기**로 분리.
+**Decision**: 이 기기에서는 Qwen3-4B와 Gemma 4 E2B/E4B를 Intel NPU에서 비교한다. E4B는 품질, E2B는 지연 후보로 두고 대칭 INT4 변환·적재·번역 품질을 검증한다. 12B 이상은 현 노트북의 활성 후보에서 제외한다.
 
-**Consequences**: 체감 속도 확보, 목적(가볍고 빠른 온디바이스) 부합. 대형 모델 품질이 필요한 작업은 별도 장비로 위임. 본문의 tok/s 수치는 계획 가정이며, Phase 0 측정값으로 최종 사이즈와 레이턴시 예산을 확정한다.
+**Consequences**: 모델 크기 이름만으로 결론 내리지 않고, 한국어 품질과 실제 NPU 지연을 함께 판단한다. 대형 모델 품질이 필요한 작업은 별도 장비에서 평가한다.
 
 ---
 
