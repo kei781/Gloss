@@ -1,6 +1,7 @@
 from pathlib import Path
 import base64
 import contextlib
+from importlib.util import find_spec
 import io
 import json
 import tempfile
@@ -9,11 +10,28 @@ import unittest
 from gloss.backend.openai_client import GenerationResult, OpenAIChatClient
 from gloss.config import RuntimeConfig
 from gloss.metrics import MetricsRecorder
-from gloss.visual.engine import VisualEngine
+from gloss.visual.engine import VisualEngine, _fit_image
 
 
 class VisualEngineTest(unittest.TestCase):
+    @unittest.skipUnless(find_spec("PIL"), "Pillow unavailable")
+    def test_vlm_image_fit_limits_image_tokens_without_changing_aspect_ratio(self) -> None:
+        from PIL import Image
+
+        original = io.BytesIO()
+        Image.new("RGB", (2048, 512), "white").save(original, format="PNG")
+        fitted, source_size, sent_size = _fit_image(
+            original.getvalue(), media_type="image/png", max_edge=1024,
+        )
+        self.assertEqual(source_size, (2048, 512))
+        self.assertEqual(sent_size, (1024, 256))
+        with Image.open(io.BytesIO(fitted)) as image:
+            self.assertEqual(image.size, sent_size)
+
+    @unittest.skipUnless(find_spec("PIL"), "Pillow unavailable")
     def test_vlm_image_uses_data_url_and_records_only_metadata(self) -> None:
+        from PIL import Image
+
         class FakeClient:
             def complete(self, **kwargs):
                 self.messages = kwargs["messages"]
@@ -28,8 +46,8 @@ class VisualEngineTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             image = root / "dialog.png"
-            image_bytes = b"\x89PNG\r\n\x1a\nimage payload"
-            image.write_bytes(image_bytes)
+            Image.new("RGB", (32, 16), "white").save(image)
+            image_bytes = image.read_bytes()
             metrics_path = root / "visual.jsonl"
             config = RuntimeConfig(
                 profile="qwen3-vl-4b", model="qwen3-vl-4b",

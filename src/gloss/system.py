@@ -4,7 +4,6 @@ import ctypes
 from dataclasses import dataclass
 import json
 import re
-import subprocess
 import sys
 
 
@@ -40,6 +39,10 @@ def npu_percent_from_counter_json(payload: str, luid: int) -> float | None:
         rows = [rows]
     if not isinstance(rows, list):
         return None
+    return _npu_percent_from_rows(rows, luid)
+
+
+def _npu_percent_from_rows(rows: list[dict], luid: int) -> float | None:
     total = 0.0
     found = False
     for row in rows:
@@ -59,29 +62,91 @@ def npu_percent_from_counter_json(payload: str, luid: int) -> float | None:
     return min(100.0, total) if found else None
 
 
+class _PdhValueUnion(ctypes.Union):
+    _fields_ = [("doubleValue", ctypes.c_double), ("largeValue", ctypes.c_int64)]
+
+
+class _PdhValue(ctypes.Structure):
+    _fields_ = [("CStatus", ctypes.c_uint32), ("value", _PdhValueUnion)]
+
+
+class _PdhItem(ctypes.Structure):
+    _fields_ = [("szName", ctypes.c_wchar_p), ("FmtValue", _PdhValue)]
+
+
 class WindowsNpuSampler:
-    """Read Windows GPU Engine PDH counters for the Intel AI Boost LUID."""
+    """Read NPU GPU Engine counters through PDH without launching a process per tick."""
 
     def __init__(self, luid: int):
         self.luid = luid
+        self._query = ctypes.c_void_p()
+        self._counter = ctypes.c_void_p()
+        self._pdh = None
+        if sys.platform != "win32":
+            return
+        try:
+            pdh = ctypes.WinDLL("pdh.dll")
+            pdh.PdhOpenQueryW.argtypes = [ctypes.c_wchar_p, ctypes.c_size_t, ctypes.POINTER(ctypes.c_void_p)]
+            pdh.PdhOpenQueryW.restype = ctypes.c_uint32
+            pdh.PdhAddEnglishCounterW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_size_t, ctypes.POINTER(ctypes.c_void_p)]
+            pdh.PdhAddEnglishCounterW.restype = ctypes.c_uint32
+            pdh.PdhCollectQueryData.argtypes = [ctypes.c_void_p]
+            pdh.PdhCollectQueryData.restype = ctypes.c_uint32
+            pdh.PdhGetFormattedCounterArrayW.argtypes = [
+                ctypes.c_void_p, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32),
+                ctypes.POINTER(ctypes.c_uint32), ctypes.c_void_p,
+            ]
+            pdh.PdhGetFormattedCounterArrayW.restype = ctypes.c_uint32
+            pdh.PdhCloseQuery.argtypes = [ctypes.c_void_p]
+            pdh.PdhCloseQuery.restype = ctypes.c_uint32
+            if pdh.PdhOpenQueryW(None, 0, ctypes.byref(self._query)) != 0:
+                return
+            self._pdh = pdh
+            if pdh.PdhAddEnglishCounterW(
+                self._query, r"\GPU Engine(*)\Utilization Percentage", 0,
+                ctypes.byref(self._counter),
+            ) != 0:
+                self.close()
+                return
+            pdh.PdhCollectQueryData(self._query)
+        except (AttributeError, OSError):
+            self.close()
 
     def sample(self) -> float | None:
-        command = (
-            "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; "
-            "$s=(Get-Counter '\\GPU Engine(*)\\Utilization Percentage' -MaxSamples 1).CounterSamples; "
-            "@($s | Select-Object InstanceName,CookedValue) | ConvertTo-Json -Compress"
+        if self._pdh is None or not self._counter:
+            return None
+        if self._pdh.PdhCollectQueryData(self._query) != 0:
+            return None
+        size = ctypes.c_uint32(0)
+        count = ctypes.c_uint32(0)
+        status = self._pdh.PdhGetFormattedCounterArrayW(
+            self._counter, 0x00000200, ctypes.byref(size), ctypes.byref(count), None,
         )
-        try:
-            result = subprocess.run(
-                ["powershell", "-NoProfile", "-Command", command],
-                capture_output=True, text=True, encoding="utf-8", timeout=5,
-                check=False,
-            )
-        except (OSError, subprocess.TimeoutExpired):
+        if status != 0x800007D2 or size.value == 0:
             return None
-        if result.returncode != 0:
+        buffer = ctypes.create_string_buffer(size.value)
+        status = self._pdh.PdhGetFormattedCounterArrayW(
+            self._counter, 0x00000200, ctypes.byref(size), ctypes.byref(count), buffer,
+        )
+        if status != 0:
             return None
-        return npu_percent_from_counter_json(result.stdout, self.luid)
+        items = ctypes.cast(buffer, ctypes.POINTER(_PdhItem))
+        rows = [
+            {"InstanceName": items[index].szName, "CookedValue": items[index].FmtValue.value.doubleValue}
+            for index in range(count.value)
+            if items[index].FmtValue.CStatus in (0, 1)
+        ]
+        return _npu_percent_from_rows(rows, self.luid)
+
+    def close(self) -> None:
+        if self._pdh is not None and self._query:
+            self._pdh.PdhCloseQuery(self._query)
+        self._pdh = None
+        self._query = ctypes.c_void_p()
+        self._counter = ctypes.c_void_p()
+
+    def __del__(self) -> None:
+        self.close()
 
 
 def cpu_percent_between(first: CpuTimes, second: CpuTimes) -> float | None:

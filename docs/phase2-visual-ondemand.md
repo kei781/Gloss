@@ -4,6 +4,7 @@ Visual 엔진은 지정 영역을 캡처한 뒤 한국어 번역을 출력하거
 
 - **OCR + 텍스트 LLM**: Windows.Media.Ocr가 이미지를 읽고, 검증된 `qwen3-4b` OVMS 모델이 번역한다. 현재 실기 권장 경로다.
 - **VLM 이미지 직접 입력**: PNG/JPEG를 OpenAI 호환 `image_url` data URL로 OVMS에 보낸다. 클라이언트 연결은 완료됐지만 Qwen3-VL-4B의 Intel NPU vision encode와 속도는 아직 검증되지 않았다.
+  기본적으로 긴 변을 1024px로 제한한다(`--vlm-max-edge 256~2048`). 게임 대사창은 캡처 rect를 타이트하게 잡아 작은 글자가 축소로 뭉개지지 않도록 한다.
 
 ## 설치
 

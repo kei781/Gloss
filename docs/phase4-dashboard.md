@@ -42,6 +42,7 @@ phase 1~3 메트릭 파일을 집계해 한 번 출력하고 종료한다.
 - 새 번역 요청이 기록되면 `request completed` 라인으로 디코드 tok/s, TTFT, 토큰, truncated 여부, **생성 구간 평균 CPU%** 를 보여준다.
 - **FR-D6 silent CPU fallback 휴리스틱**: NPU 카운터가 지정되지 않았거나 생성 구간 샘플이 부족할 때, 평균 CPU%가 임계값(기본 65%) 이상이면 `possible silent CPU fallback` WARN을 띄운다. 이는 ADR-009의 보조 증거이며 `dry_run`은 제외한다.
 - `--npu-luid 0x11b60`(또는 `GLOSS_NPU_LUID`)을 지정하면 Windows GPU Engine의 해당 LUID `engtype_compute` 카운터를 샘플링한다. 지정한 LUID에서 생성 구간에 2개 이상 샘플이 있고 평균이 1% 미만이면 NPU 미사용 경고를 낸다. 카운터가 없으면 NPU 값은 생략하고 CPU 휴리스틱을 사용한다. `0x11b60`은 2026-06-20 실기 검증 당시의 예시이므로 현재 OpenVINO NPU plugin 로그의 `DEVICE_LUID`를 확인해 값을 지정한다. 단일 `--once` 샘플은 추론 중 NPU 사용 증명이 아니다.
+  카운터는 Win32 PDH API를 직접 호출해 읽으며, 매 틱마다 PowerShell 프로세스를 띄우지 않는다.
 - `--probe-every`(기본 30초) 간격으로 백엔드 상태 라인을 남긴다.
 - 종료는 Ctrl+C (또는 테스트용 `--max-ticks N`).
 

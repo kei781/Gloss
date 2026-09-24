@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 from dataclasses import asdict
+from io import BytesIO
 from pathlib import Path
 
 from gloss.backend.openai_client import GenerationResult, OpenAIChatClient
@@ -74,6 +75,7 @@ class VisualEngine:
         capture: CaptureResult | None = None,
         stream: bool = True,
         phase: int = 2,
+        max_image_edge: int | None = 1024,
         metrics_extra: dict[str, object] | None = None,
     ) -> VisualTranslation:
         suffix = image_path.suffix.lower()
@@ -88,6 +90,14 @@ class VisualEngine:
             raise VisualEngineError(f"VLM image is empty: {image_path}")
         if len(image_bytes) > 20 * 1024 * 1024:
             raise VisualEngineError("VLM image exceeds 20 MB; crop the capture region.")
+
+        source_bytes = len(image_bytes)
+        source_size = None
+        sent_size = None
+        if max_image_edge is not None:
+            image_bytes, source_size, sent_size = _fit_image(
+                image_bytes, media_type=media_type, max_edge=max_image_edge,
+            )
 
         encoded = base64.b64encode(image_bytes).decode("ascii")
         messages = [
@@ -104,7 +114,11 @@ class VisualEngine:
             stream=stream,
             input_mode="vlm_image",
             phase=phase,
-            metrics_extra={"image": {"path": str(image_path), "bytes": len(image_bytes)}, **(metrics_extra or {})},
+            metrics_extra={"image": {
+                "path": str(image_path), "bytes": len(image_bytes),
+                "sourceBytes": source_bytes, "sourceSize": source_size,
+                "sentSize": sent_size,
+            }, **(metrics_extra or {})},
         )
 
     def _translate(
@@ -192,6 +206,32 @@ class VisualEngine:
 
 class VisualEngineError(RuntimeError):
     pass
+
+
+def _fit_image(
+    image_bytes: bytes, *, media_type: str, max_edge: int
+) -> tuple[bytes, tuple[int, int], tuple[int, int]]:
+    if not 256 <= max_edge <= 2048:
+        raise VisualEngineError("VLM max image edge must be 256-2048 pixels.")
+    try:
+        from PIL import Image, ImageOps
+    except ImportError as exc:
+        raise VisualEngineError("VLM image resizing requires: pip install -e '.[capture]'") from exc
+    try:
+        with Image.open(BytesIO(image_bytes)) as image:
+            source_size = image.size
+            if max(source_size) <= max_edge:
+                return image_bytes, source_size, source_size
+            fitted = ImageOps.exif_transpose(image)
+            fitted.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
+            if media_type == "image/jpeg" and fitted.mode != "RGB":
+                fitted = fitted.convert("RGB")
+            sent_size = fitted.size
+            output = BytesIO()
+            fitted.save(output, format="JPEG" if media_type == "image/jpeg" else "PNG")
+            return output.getvalue(), source_size, sent_size
+    except (OSError, ValueError) as exc:
+        raise VisualEngineError(f"Cannot prepare VLM image: {exc}") from exc
 
 
 def _capture_to_dict(capture: CaptureResult | None) -> dict[str, object] | None:

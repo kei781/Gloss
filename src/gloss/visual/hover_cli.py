@@ -184,6 +184,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--capture-backend", choices=["auto", "wgc", "dxgi", "gdi"], default="auto",
         help="Capture with WGC, DXGI, or GDI; auto tries them in that order.",
     )
+    parser.add_argument(
+        "--vlm-max-edge", type=int, default=1024,
+        help="Resize the longest captured image edge before VLM inference (256-2048).",
+    )
     parser.add_argument("--poll-ms", type=int, default=60, help="Hotkey poll interval (ms).")
     parser.add_argument("--config", type=Path, help="Config JSON path.")
     parser.add_argument("--env-file", type=Path, help="Env file path.")
@@ -295,6 +299,7 @@ def main(argv: list[str] | None = None) -> int:
                 controller.show("● 이미지 번역 중 (VLM)...")
                 translate = lambda: engine.translate_image(
                     capture.image_path, capture=capture, stream=not args.no_stream,
+                    max_image_edge=args.vlm_max_edge,
                 )
             else:
                 controller.show("● 글자 읽는 중 (OCR)...")

@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from gloss.text.engine import split_text_blocks
+from gloss.text.engine import estimate_source_tokens, split_text_blocks
 from gloss.text.extractors import (
     ExtractionError,
     _ocr_pdf_page,
@@ -187,6 +187,15 @@ class TextExtractionTest(unittest.TestCase):
         self.assertEqual(len(blocks), 2)
         self.assertLessEqual(len(blocks[0]), 45)
         self.assertLessEqual(len(blocks[1]), 45)
+
+    def test_split_text_blocks_respects_npu_prompt_budget_for_cjk(self) -> None:
+        source = "日" * 900
+        blocks = list(split_text_blocks(
+            source, max_chars=1800, max_estimated_tokens=480,
+        ))
+        self.assertGreater(len(blocks), 1)
+        self.assertEqual("".join(blocks), source)
+        self.assertTrue(all(estimate_source_tokens(block) <= 480 for block in blocks))
 
 
 if __name__ == "__main__":

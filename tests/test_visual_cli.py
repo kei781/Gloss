@@ -1,4 +1,5 @@
 import contextlib
+from importlib.util import find_spec
 import io
 from pathlib import Path
 import tempfile
@@ -9,10 +10,13 @@ from gloss.visual.cli import main
 
 
 class VisualCliTest(unittest.TestCase):
+    @unittest.skipUnless(find_spec("PIL"), "Pillow unavailable")
     def test_dry_run_vlm_image_writes_output(self) -> None:
+        from PIL import Image
+
         with tempfile.TemporaryDirectory() as temp_dir:
             image = Path(temp_dir) / "dialog.png"
-            image.write_bytes(b"\x89PNG\r\n\x1a\nimage")
+            Image.new("RGB", (32, 16), "white").save(image)
             output = Path(temp_dir) / "output.txt"
             with contextlib.redirect_stderr(io.StringIO()):
                 exit_code = main([

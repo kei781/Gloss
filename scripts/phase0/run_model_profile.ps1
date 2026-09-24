@@ -132,6 +132,13 @@ if ([string]::IsNullOrWhiteSpace($modelsDirValue)) {
 $modelsDir = Resolve-WorkspacePath -PathValue $modelsDirValue -ConfigDir $configDir
 New-Item -ItemType Directory -Force -Path $modelsDir | Out-Null
 
+$cacheDirValue = Get-EnvValue -Names @("GLOSS_PHASE0_CACHE_DIR")
+if ([string]::IsNullOrWhiteSpace($cacheDirValue)) {
+    $cacheDirValue = Join-Path (Split-Path -Parent $modelsDir) "ovms-cache"
+}
+$cacheDir = Resolve-WorkspacePath -PathValue $cacheDirValue -ConfigDir $configDir
+New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
+
 # REST port는 profile/config의 base_url에서 추출한다. 기본 8000.
 $baseUrl = Get-EnvValue -Names @("GLOSS_PHASE0_BASE_URL", "GLOSS_OPENAI_BASE_URL")
 if ([string]::IsNullOrWhiteSpace($baseUrl) -and $profileJson.serve.base_url) {
@@ -156,6 +163,7 @@ switch ($Action) {
         $arguments = @(
             "--rest_port", $restPort,
             "--model_repository_path", $modelsDir,
+            "--cache_dir", $cacheDir,
             "--model_name", $runtimeModel,
             "--target_device", $targetDevice,
             "--pipeline_type", $pipelineType,
@@ -170,6 +178,7 @@ switch ($Action) {
             "--pull",
             "--source_model", $sourceModel,
             "--model_repository_path", $modelsDir,
+            "--cache_dir", $cacheDir,
             "--model_name", $runtimeModel,
             "--target_device", $targetDevice,
             "--pipeline_type", $pipelineType,
@@ -198,6 +207,7 @@ if ($Action -eq "pull") {
 log "device:   $targetDevice"
 log "pipeline: $pipelineType"
 log "models:   $modelsDir"
+log "cache:    $cacheDir"
 log "rest_port:$restPort"
 log "action:   $Action"
 

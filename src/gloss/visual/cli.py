@@ -47,6 +47,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--vlm", action="store_true",
         help="Capture --capture-rect and send the image directly to a VLM backend.",
     )
+    parser.add_argument(
+        "--vlm-max-edge", type=int, default=1024,
+        help="Resize the longest image edge before VLM inference (256-2048; default 1024).",
+    )
     parser.add_argument("--ocr-language", help="OCR language tag, e.g. ko, en-US, ja.")
     parser.add_argument("--config", type=Path, help="Config JSON path.")
     parser.add_argument("--env-file", type=Path, help="Env file path.")
@@ -132,6 +136,7 @@ def main(argv: list[str] | None = None) -> int:
             image_path = args.image_file or capture.image_path
             translated = engine.translate_image(
                 image_path, capture=capture, stream=not args.no_stream,
+                max_image_edge=args.vlm_max_edge,
             )
         else:
             translated = engine.translate_ocr_text(

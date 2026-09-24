@@ -147,6 +147,7 @@ Remove-Item Env:\PYTHONPATH
 Phase 1의 번역 토큰 기본값은 Phase 0 벤치마크용 `measurement.max_tokens`와
 분리되어 있으며 기본 1024 tokens/block이다. 필요하면 `--max-tokens`,
 `GLOSS_PHASE1_MAX_TOKENS`, 또는 config의 `phase1.text.max_tokens`로 조정한다.
+원문은 Intel NPU의 기본 프롬프트 길이(1024토큰)를 고려해 블록당 추정 480토큰 이하로 나눈다. CJK 문자를 더 보수적으로 계산하며, `--max-estimated-tokens-per-block`으로 조정할 수 있다. 실제 토크나이저 값은 OVMS 응답의 `prompt_tokens` 메트릭으로 확인한다.
 백엔드가 `finish_reason=length`를 반환하면 해당 block은 `truncated=true`로 기록되고
 stderr 경고 로그도 남는다.
 

@@ -28,6 +28,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\phase0\run_model_profile.ps1 
 ```
 
 `pull`은 INT4 OpenVINO 모델 준비 명령입니다. 사용 중인 OVMS 빌드에서 이 기능이 지원되지 않으면 [Phase 0 검증 노트](phase0/verification-notes/2026-06-20-intel358h.md)의 `optimum-cli export openvino` 명령으로 준비하세요. 모델 다운로드와 변환은 시간이 걸릴 수 있으며, 실제 NPU 적재 여부는 OVMS 로그와 NPU counter로 확인해야 합니다.
+서버는 `.models/ovms-cache`에 컴파일 결과를 보관해 다음 적재 시간을 줄입니다. 캐시 위치는 `GLOSS_PHASE0_CACHE_DIR`로 변경할 수 있습니다.
 
 `qwen3-vl-4b`는 [OpenVINO의 사전 변환 INT4 IR](https://huggingface.co/OpenVINO/Qwen3-VL-4B-Instruct-int4-ov)을 pull하도록 설정했습니다. 약 3GB 모델 다운로드와 NPU 적재·vision encode 검증은 아직 수행되지 않았습니다.
 NPU 프로파일은 OVMS의 비배칭 `LM`/`VLM` 파이프라인을 명시합니다. [OVMS 문제 해결 문서](https://docs.openvino.ai/2026/model-server/ovms_docs_troubleshooting.html)에 따르면 NPU는 연속 배칭 파이프라인을 사용할 수 없습니다.
@@ -52,6 +53,7 @@ NPU 프로파일은 OVMS의 비배칭 `LM`/`VLM` 파이프라인을 명시합니
 ```
 
 호버 단축키는 `Ctrl+Alt+Z` 번역, `Ctrl+Alt+L` 오버레이 잠금, `Ctrl+Alt+Q` 종료입니다. Visual 기본 경로는 Windows OCR + 텍스트 모델입니다. VLM 이미지 요청은 `gloss-visual --image-file` 또는 `gloss-hover --input-mode vlm`로 연결되어 있지만, Qwen3-VL-4B의 Intel NPU vision encode 검증 전에는 실사용 성능을 보장할 수 없습니다. `--profile qwen3-vl-4b`를 명시하고, 서버에 해당 모델이 적재됐는지 확인하세요.
+VLM 경로는 이미지의 긴 변을 기본 1024px로 제한해 불필요한 이미지 토큰을 줄입니다(`--vlm-max-edge`로 조정). Text 경로는 CJK를 고려한 보수적 추정으로 원문을 기본 480토큰 이하 블록으로 나눕니다(`--max-estimated-tokens-per-block`로 조정). 이 추정치는 실제 모델 토크나이저와 다르므로 메트릭의 prompt token·truncated 값을 확인하세요.
 
 ```powershell
 .\.venv\Scripts\gloss-visual.exe --profile qwen3-vl-4b --image-file .\dialog.png

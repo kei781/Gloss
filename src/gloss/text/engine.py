@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+import math
 from typing import Iterable
 
 from gloss.backend.openai_client import GenerationResult, OpenAIChatClient
@@ -56,10 +57,14 @@ class TextEngine:
         document: ExtractedDocument,
         *,
         max_chars_per_block: int = 1800,
+        max_estimated_tokens_per_block: int = 480,
         stream: bool = True,
     ) -> TranslationDocument:
         blocks: list[TranslationBlock] = []
-        source_blocks = list(split_text_blocks(document.text, max_chars_per_block))
+        source_blocks = list(split_text_blocks(
+            document.text, max_chars_per_block,
+            max_estimated_tokens=max_estimated_tokens_per_block,
+        ))
         if not source_blocks:
             raise TextEngineError("No text blocks to translate.")
 
@@ -150,22 +155,33 @@ class TextEngineError(RuntimeError):
     pass
 
 
-def split_text_blocks(text: str, max_chars: int) -> Iterable[str]:
+def split_text_blocks(
+    text: str, max_chars: int, *, max_estimated_tokens: int | None = None
+) -> Iterable[str]:
+    if max_chars < 1 or (max_estimated_tokens is not None and max_estimated_tokens < 32):
+        raise ValueError("Block limits must be positive; token budget must be at least 32.")
     paragraphs = [paragraph.strip() for paragraph in text.split("\n\n") if paragraph.strip()]
     current: list[str] = []
     current_len = 0
 
+    def fits(value: str) -> bool:
+        return len(value) <= max_chars and (
+            max_estimated_tokens is None
+            or estimate_source_tokens(value) <= max_estimated_tokens
+        )
+
     for paragraph in paragraphs:
-        if len(paragraph) > max_chars:
+        if not fits(paragraph):
             if current:
                 yield "\n\n".join(current)
                 current = []
                 current_len = 0
-            yield from _split_long_paragraph(paragraph, max_chars)
+            yield from _split_long_paragraph(paragraph, max_chars, fits)
             continue
 
         next_len = current_len + len(paragraph) + (2 if current else 0)
-        if current and next_len > max_chars:
+        candidate = "\n\n".join([*current, paragraph])
+        if current and (next_len > max_chars or not fits(candidate)):
             yield "\n\n".join(current)
             current = [paragraph]
             current_len = len(paragraph)
@@ -177,7 +193,7 @@ def split_text_blocks(text: str, max_chars: int) -> Iterable[str]:
         yield "\n\n".join(current)
 
 
-def _split_long_paragraph(paragraph: str, max_chars: int) -> Iterable[str]:
+def _split_long_paragraph(paragraph: str, max_chars: int, fits) -> Iterable[str]:
     sentences = paragraph.replace("。", "。\n").replace(". ", ".\n").splitlines()
     chunk: list[str] = []
     chunk_len = 0
@@ -185,16 +201,29 @@ def _split_long_paragraph(paragraph: str, max_chars: int) -> Iterable[str]:
         sentence = sentence.strip()
         if not sentence:
             continue
-        if len(sentence) > max_chars:
+        if not fits(sentence):
             if chunk:
                 yield " ".join(chunk)
                 chunk = []
                 chunk_len = 0
-            for start in range(0, len(sentence), max_chars):
-                yield sentence[start : start + max_chars]
+            remaining = sentence
+            while remaining:
+                low, high = 1, min(len(remaining), max_chars)
+                cut = 1
+                while low <= high:
+                    middle = (low + high) // 2
+                    if fits(remaining[:middle]):
+                        cut = middle
+                        low = middle + 1
+                    else:
+                        high = middle - 1
+                piece = remaining[:cut].strip()
+                if piece:
+                    yield piece
+                remaining = remaining[cut:].lstrip()
             continue
         next_len = chunk_len + len(sentence) + (1 if chunk else 0)
-        if chunk and next_len > max_chars:
+        if chunk and (next_len > max_chars or not fits(" ".join([*chunk, sentence]))):
             yield " ".join(chunk)
             chunk = [sentence]
             chunk_len = len(sentence)
@@ -203,3 +232,8 @@ def _split_long_paragraph(paragraph: str, max_chars: int) -> Iterable[str]:
             chunk_len = next_len
     if chunk:
         yield " ".join(chunk)
+
+
+def estimate_source_tokens(text: str) -> int:
+    """Conservative budget for mixed ASCII and CJK without loading a tokenizer."""
+    return math.ceil(sum(1.5 if ord(char) > 127 else 1 / 3 for char in text))

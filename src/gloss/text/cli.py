@@ -29,6 +29,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--temperature", type=float, help="Sampling temperature.")
     parser.add_argument("--timeout", type=float, help="Backend timeout seconds.")
     parser.add_argument("--max-chars-per-block", type=int, default=1800)
+    parser.add_argument(
+        "--max-estimated-tokens-per-block", type=int, default=480,
+        help="Conservative source token budget for the NPU prompt (default 480).",
+    )
     parser.add_argument("--render-js", action="store_true", help="Render URL in Chromium before extraction.")
     parser.add_argument("--js-wait-ms", type=int, default=800, help="Wait after DOMContentLoaded in JS mode (0-10000 ms).")
     parser.add_argument(
@@ -123,6 +127,7 @@ def main(argv: list[str] | None = None) -> int:
         translated = engine.translate(
             document,
             max_chars_per_block=args.max_chars_per_block,
+            max_estimated_tokens_per_block=args.max_estimated_tokens_per_block,
             stream=not args.no_stream,
         )
     except (BackendError, ExtractionError, TextEngineError, ValueError) as exc:
