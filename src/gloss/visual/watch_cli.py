@@ -10,6 +10,7 @@ from gloss.log import log
 from gloss.metrics import MetricsRecorder, now_iso
 from gloss.overlay.tk_overlay import OverlayController, OverlayError, OverlayGeometry
 from gloss.visual.capture import CaptureError, make_screen_capture
+from gloss.visual.display import default_overlay_geometry, enable_dpi_awareness
 from gloss.visual.engine import VisualEngine, VisualEngineError
 from gloss.visual.models import CaptureResult, Rect
 from gloss.visual.ocr import OcrError, OcrResult, WindowsOcr, ocr_metrics
@@ -102,18 +103,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Append timestamped translations to this file.",
     )
     parser.add_argument("--overlay", action="store_true", help="Show output in overlay.")
-    parser.add_argument("--overlay-rect", default="80,720,1000,180")
+    parser.add_argument("--overlay-rect", help="Physical-pixel X,Y,WIDTH,HEIGHT; default bottom-center.")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    enable_dpi_awareness()
 
     try:
         rect = Rect.parse(args.watch_rect)
         overlay_geometry = (
-            OverlayGeometry.parse(args.overlay_rect) if args.overlay else None
+            (OverlayGeometry.parse(args.overlay_rect) if args.overlay_rect else default_overlay_geometry())
+            if args.overlay else None
         )
         config = load_runtime_config(
             config_path=args.config,

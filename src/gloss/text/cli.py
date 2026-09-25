@@ -16,7 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the Gloss Phase 1 text engine.")
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--text", help="Translate an inline text block.")
-    source.add_argument("--file", type=Path, help="Translate a text or HTML file.")
+    source.add_argument("--file", type=Path, help="Translate a text, HTML, or PDF file.")
     source.add_argument("--url", help="Fetch and translate a URL.")
     parser.add_argument("--config", type=Path, help="Config JSON path.")
     parser.add_argument("--env-file", type=Path, help="Env file path.")
@@ -30,8 +30,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout", type=float, help="Backend timeout seconds.")
     parser.add_argument("--max-chars-per-block", type=int, default=1800)
     parser.add_argument(
-        "--max-estimated-tokens-per-block", type=int, default=480,
-        help="Conservative source token budget for the NPU prompt (default 480).",
+        "--max-estimated-tokens-per-block", type=int,
+        help="Source token budget for the NPU prompt (default: about 47%% of profile max_prompt_len).",
     )
     parser.add_argument("--render-js", action="store_true", help="Render URL in Chromium before extraction.")
     parser.add_argument("--js-wait-ms", type=int, default=800, help="Wait after DOMContentLoaded in JS mode (0-10000 ms).")

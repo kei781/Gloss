@@ -29,7 +29,31 @@ class VisualEngineTest(unittest.TestCase):
             self.assertEqual(image.size, sent_size)
 
     @unittest.skipUnless(find_spec("PIL"), "Pillow unavailable")
-    def test_vlm_image_uses_data_url_and_records_only_metadata(self) -> None:
+    def test_vlm_image_fit_obeys_prompt_area_and_exif_orientation(self) -> None:
+        from PIL import Image
+
+        original = io.BytesIO()
+        Image.new("RGB", (1000, 1000), "white").save(original, format="PNG")
+        _bytes, _source, sent_size = _fit_image(
+            original.getvalue(), media_type="image/png", max_edge=2048,
+            max_prompt_len=256,
+        )
+        self.assertLessEqual(sent_size[0] * sent_size[1], (256 - 128) * 1024)
+
+        exif = Image.Exif()
+        exif[274] = 6
+        rotated = io.BytesIO()
+        Image.new("RGB", (20, 40), "white").save(rotated, format="JPEG", exif=exif)
+        fitted, source_size, sent_size = _fit_image(
+            rotated.getvalue(), media_type="image/jpeg", max_edge=1024,
+        )
+        self.assertEqual(source_size, (20, 40))
+        self.assertEqual(sent_size, (40, 20))
+        with Image.open(io.BytesIO(fitted)) as image:
+            self.assertEqual(image.getexif().get(274, 1), 1)
+
+    @unittest.skipUnless(find_spec("PIL"), "Pillow unavailable")
+    def test_vlm_image_uses_data_url_without_logging_encoded_pixels(self) -> None:
         from PIL import Image
 
         class FakeClient:
@@ -72,7 +96,7 @@ class VisualEngineTest(unittest.TestCase):
             row = json.loads(metrics_path.read_text(encoding="utf-8"))
             self.assertEqual(row["inputMode"], "vlm_image")
             self.assertEqual(row["image"]["bytes"], len(image_bytes))
-            self.assertNotIn("base64", metrics_path.read_text(encoding="utf-8"))
+            self.assertNotIn(base64.b64encode(image_bytes).decode("ascii"), metrics_path.read_text(encoding="utf-8"))
 
     def test_dry_run_writes_phase2_metrics(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -78,6 +78,40 @@ class PowerShellScreenCaptureTest(unittest.TestCase):
         self.assertEqual(calls["region"], (5, 6, 25, 16))
         self.assertEqual(calls["format"], "PNG")
 
+    def test_wgc_reuses_camera_for_multiple_captures(self) -> None:
+        class FakeFrame:
+            shape = (10, 20, 4)
+            def tobytes(self):
+                return b"\0" * 800
+
+        camera = mock.Mock()
+        camera.grab.return_value = FakeFrame()
+        fake_image = mock.Mock()
+        fake_image.convert.return_value = fake_image
+        fake_image.save.side_effect = lambda path, format: path.write_bytes(b"PNG")
+        dxcam = types.ModuleType("dxcam")
+        dxcam.create = mock.Mock(return_value=camera)
+        pil = types.ModuleType("PIL")
+        pil.Image = types.SimpleNamespace(frombytes=lambda *args: fake_image)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with mock.patch.dict(sys.modules, {"dxcam": dxcam, "PIL": pil}):
+                capture = WindowsGraphicsCapture()
+                for _ in range(2):
+                    capture.capture_rect(Rect(5, 6, 20, 10), output_dir=Path(temp_dir))
+                capture.close()
+        dxcam.create.assert_called_once()
+        self.assertEqual(camera.grab.call_count, 2)
+        camera.release.assert_called_once()
+
+    def test_wgc_import_error_is_cached_as_capture_error(self) -> None:
+        capture = WindowsGraphicsCapture()
+        with mock.patch.dict(sys.modules, {"dxcam": None}):
+            with self.assertRaises(CaptureError):
+                capture._camera_for(Rect(0, 0, 20, 10))
+        self.assertIsNotNone(capture._init_error)
+        with self.assertRaises(CaptureError):
+            capture._camera_for(Rect(0, 0, 20, 10))
+
     def test_default_script_path_is_cwd_independent(self) -> None:
         original_cwd = Path.cwd()
         with tempfile.TemporaryDirectory() as temp_dir:

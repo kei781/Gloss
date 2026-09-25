@@ -27,13 +27,15 @@ class JsonlTail:
     tick instead of killing a long-running dashboard.
     """
 
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, *, include_existing: bool = False):
         self.path = path
         self._offset = 0
         self._file_id: tuple[int, ...] | None = None
+        self.bad_lines = 0
         try:
             stat = path.stat()
-            self._offset = path.read_bytes().rfind(b"\n") + 1
+            if not include_existing:
+                self._offset = path.read_bytes().rfind(b"\n") + 1
             self._file_id = _file_id_from_stat(stat)
         except OSError:
             pass
@@ -81,9 +83,12 @@ class JsonlTail:
             try:
                 row = json.loads(line)
             except json.JSONDecodeError:
+                self.bad_lines += 1
                 continue
             if isinstance(row, dict):
                 rows.append(row)
+            else:
+                self.bad_lines += 1
         return rows
 
 
@@ -235,7 +240,7 @@ class LiveDashboard:
                 level="WARN", npu_during=_round(avg_npu),
                 request_id=row.get("requestId"),
             )
-        elif npu_samples < 2 and assess_cpu_fallback(row, avg_cpu, self.config.cpu_threshold):
+        if assess_cpu_fallback(row, avg_cpu, self.config.cpu_threshold):
             log(
                 "possible silent CPU fallback (보조 증거, ADR-009/FR-D6)",
                 level="WARN",

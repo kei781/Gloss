@@ -1,8 +1,8 @@
 """Gloss hover daemon (FR-V2): global hotkey -> capture around cursor ->
 Windows OCR (CPU helper) -> NPU translation -> subtitle overlay.
 
-This is the interactive front for the lightweight OCR + small-LLM path
-(ADR-013). The VLM single-pass front is separate and not wired yet. Tk must
+This interactive front supports both OCR + text LLM and direct VLM input.
+Tk must
 own the main thread on Windows, so the overlay runs the Tk mainloop while a
 daemon worker polls the hotkey and drives the capture/OCR/translate pipeline.
 """
@@ -23,6 +23,7 @@ from gloss.metrics import MetricsRecorder
 from gloss.overlay.interactive_overlay import InteractiveOverlay
 from gloss.overlay.tk_overlay import OverlayError, OverlayGeometry
 from gloss.visual.capture import CaptureError, make_screen_capture
+from gloss.visual.display import default_overlay_geometry, enable_dpi_awareness
 from gloss.visual.engine import VisualEngine, VisualEngineError
 from gloss.visual.models import Rect
 from gloss.visual.ocr import OcrError, WindowsOcr, ocr_metrics
@@ -73,20 +74,7 @@ class HotkeySpec:
 
 
 def _enable_dpi_awareness() -> None:
-    """Match the DPI-aware capture helper so GetCursorPos / overlay geometry use
-    physical pixels. Without this, on a scaled display (e.g. 200%) the cursor
-    coordinates are logical and the captured region lands in the wrong place."""
-    user32 = ctypes.windll.user32
-    try:
-        # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = -4
-        if user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4)):
-            return
-    except (AttributeError, OSError):
-        pass
-    try:
-        user32.SetProcessDPIAware()
-    except (AttributeError, OSError):
-        log("could not enable DPI awareness", level="WARN")
+    enable_dpi_awareness()
 
 
 def _key_down(vk: int) -> bool:
@@ -131,12 +119,7 @@ def _region_around_cursor(width: int, height: int) -> Rect:
 
 
 def _default_overlay_geometry() -> OverlayGeometry:
-    sw, sh = _primary_screen()
-    width = min(1200, max(400, sw - 160))
-    x = (sw - width) // 2
-    height = 200
-    y = sh - height - 80
-    return OverlayGeometry(x=x, y=y, width=width, height=height)
+    return default_overlay_geometry()
 
 
 def _cleanup_capture_file(path: Path) -> None:
@@ -221,6 +204,8 @@ def main(argv: list[str] | None = None) -> int:
         region_w, region_h = (int(region_parts[0]), int(region_parts[1]))
         if region_w <= 0 or region_h <= 0:
             raise ValueError("--region width and height must be > 0.")
+        if args.input_mode == "vlm" and not 256 <= args.vlm_max_edge <= 2048:
+            raise ValueError("--vlm-max-edge must be between 256 and 2048.")
 
         geometry = (
             OverlayGeometry.parse(args.overlay_rect)

@@ -5,6 +5,7 @@ from importlib import resources
 import json
 from pathlib import Path
 import subprocess
+import tempfile
 import time
 from typing import Any, Callable
 
@@ -72,6 +73,39 @@ class WindowsOcr:
         payload = self._run_json(command)
         elapsed_s = max(time.perf_counter() - started_at, 0.0)
 
+        return self._result_from_payload(payload, elapsed_s)
+
+    def recognize_many(self, image_paths: list[Path]) -> list[OcrResult | OcrError]:
+        if not image_paths:
+            return []
+        if not self.script_path.exists():
+            raise OcrError(f"OCR script not found: {self.script_path}")
+        for path in image_paths:
+            if not path.exists():
+                raise OcrError(f"OCR image not found: {path}")
+        with tempfile.TemporaryDirectory(prefix="gloss-ocr-") as temp_dir:
+            manifest = Path(temp_dir) / "images.json"
+            manifest.write_text(json.dumps([str(path.resolve()) for path in image_paths]), encoding="utf-8")
+            command = self._base_command() + ["-ImagesManifest", str(manifest)]
+            if self.language:
+                command += ["-Language", self.language]
+            started_at = time.perf_counter()
+            payload = self._run_json(command, timeout_s=max(self.timeout_s, self.timeout_s * len(image_paths)))
+        elapsed_s = max(time.perf_counter() - started_at, 0.0)
+        raw_results = payload.get("results")
+        if not isinstance(raw_results, list) or len(raw_results) != len(image_paths):
+            raise OcrError("OCR batch returned the wrong number of results.")
+        results: list[OcrResult | OcrError] = []
+        for raw in raw_results:
+            if not isinstance(raw, dict):
+                results.append(OcrError("OCR batch returned an invalid result."))
+            elif raw.get("error"):
+                results.append(OcrError(str(raw["error"])))
+            else:
+                results.append(self._result_from_payload(raw, elapsed_s / len(image_paths)))
+        return results
+
+    def _result_from_payload(self, payload: dict[str, Any], elapsed_s: float) -> OcrResult:
         language = payload.get("language")
         lines = _payload_lines(payload, language=language)
         text = "\n".join(lines).strip()
@@ -110,7 +144,7 @@ class WindowsOcr:
             str(self.script_path),
         ]
 
-    def _run_json(self, command: list[str]) -> dict[str, Any]:
+    def _run_json(self, command: list[str], *, timeout_s: float | None = None) -> dict[str, Any]:
         try:
             completed = self._run(
                 command,
@@ -122,10 +156,10 @@ class WindowsOcr:
                 # console to UTF-8 arrive in the OEM code page (cp949 here);
                 # never let a decode error escape the OcrError contract.
                 errors="replace",
-                timeout=self.timeout_s,
+                timeout=timeout_s or self.timeout_s,
             )
         except subprocess.TimeoutExpired as exc:
-            raise OcrError(f"Windows OCR timed out after {self.timeout_s}s.") from exc
+            raise OcrError(f"Windows OCR timed out after {timeout_s or self.timeout_s}s.") from exc
 
         if completed.returncode != 0:
             error_text = (completed.stderr or completed.stdout or "").strip()

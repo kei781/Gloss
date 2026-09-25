@@ -3,12 +3,14 @@ from __future__ import annotations
 import base64
 from dataclasses import asdict
 from io import BytesIO
+import math
 from pathlib import Path
 
 from gloss.backend.openai_client import GenerationResult, OpenAIChatClient
 from gloss.config import RuntimeConfig
 from gloss.log import log
 from gloss.metrics import MetricsRecorder, new_request_id
+from gloss.text.engine import split_text_blocks
 from gloss.visual.models import CaptureResult, VisualTranslation
 
 
@@ -53,19 +55,27 @@ class VisualEngine:
         clean_source = source_text.strip()
         if not clean_source:
             raise VisualEngineError("No OCR text provided for visual translation.")
-
-        messages = [
-            {"role": "system", "content": VISUAL_SYSTEM_PROMPT},
-            {"role": "user", "content": clean_source},
-        ]
-        return self._translate(
-            messages=messages,
-            source_text=clean_source,
-            capture=capture,
-            stream=stream,
-            input_mode=input_mode,
-            phase=phase,
-            metrics_extra=metrics_extra,
+        blocks = list(split_text_blocks(
+            clean_source, 1800, max_estimated_tokens=self.config.source_token_budget,
+        ))
+        translations: list[str] = []
+        for index, block in enumerate(blocks, start=1):
+            messages = [
+                {"role": "system", "content": VISUAL_SYSTEM_PROMPT},
+                {"role": "user", "content": block},
+            ]
+            result = self._translate(
+                messages=messages,
+                source_text=block,
+                capture=capture,
+                stream=stream,
+                input_mode=input_mode,
+                phase=phase,
+                metrics_extra={"blockIndex": index, "blockCount": len(blocks), **(metrics_extra or {})},
+            )
+            translations.append(result.translated_text)
+        return VisualTranslation(
+            translated_text="\n\n".join(translations), source_text=clean_source, capture=capture,
         )
 
     def translate_image(
@@ -83,21 +93,24 @@ class VisualEngine:
         if media_type is None:
             raise VisualEngineError("VLM image must be PNG or JPEG.")
         try:
+            source_bytes = image_path.stat().st_size
+            if source_bytes > 200 * 1024 * 1024:
+                raise VisualEngineError("VLM source image exceeds 200 MB.")
             image_bytes = image_path.read_bytes()
         except OSError as exc:
             raise VisualEngineError(f"Cannot read VLM image: {image_path}: {exc}") from exc
         if not image_bytes:
             raise VisualEngineError(f"VLM image is empty: {image_path}")
-        if len(image_bytes) > 20 * 1024 * 1024:
-            raise VisualEngineError("VLM image exceeds 20 MB; crop the capture region.")
 
-        source_bytes = len(image_bytes)
         source_size = None
         sent_size = None
         if max_image_edge is not None:
             image_bytes, source_size, sent_size = _fit_image(
                 image_bytes, media_type=media_type, max_edge=max_image_edge,
+                max_prompt_len=self.config.max_prompt_len,
             )
+        if len(image_bytes) > 20 * 1024 * 1024:
+            raise VisualEngineError("VLM image still exceeds 20 MB after resizing.")
 
         encoded = base64.b64encode(image_bytes).decode("ascii")
         messages = [
@@ -209,7 +222,8 @@ class VisualEngineError(RuntimeError):
 
 
 def _fit_image(
-    image_bytes: bytes, *, media_type: str, max_edge: int
+    image_bytes: bytes, *, media_type: str, max_edge: int,
+    max_prompt_len: int = 1024,
 ) -> tuple[bytes, tuple[int, int], tuple[int, int]]:
     if not 256 <= max_edge <= 2048:
         raise VisualEngineError("VLM max image edge must be 256-2048 pixels.")
@@ -220,17 +234,24 @@ def _fit_image(
     try:
         with Image.open(BytesIO(image_bytes)) as image:
             source_size = image.size
-            if max(source_size) <= max_edge:
+            orientation = image.getexif().get(274, 1)
+            max_pixels = max(1024, (max_prompt_len - 128) * 1024)
+            if max(source_size) <= max_edge and source_size[0] * source_size[1] <= max_pixels and orientation == 1:
                 return image_bytes, source_size, source_size
             fitted = ImageOps.exif_transpose(image)
-            fitted.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
+            width, height = fitted.size
+            scale = min(max_edge / max(width, height), math.sqrt(max_pixels / (width * height)), 1.0)
+            fitted.thumbnail(
+                (max(1, int(width * scale)), max(1, int(height * scale))),
+                Image.Resampling.LANCZOS,
+            )
             if media_type == "image/jpeg" and fitted.mode != "RGB":
                 fitted = fitted.convert("RGB")
             sent_size = fitted.size
             output = BytesIO()
             fitted.save(output, format="JPEG" if media_type == "image/jpeg" else "PNG")
             return output.getvalue(), source_size, sent_size
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, SyntaxError, Image.DecompressionBombError) as exc:
         raise VisualEngineError(f"Cannot prepare VLM image: {exc}") from exc
 
 

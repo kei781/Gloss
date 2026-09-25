@@ -10,6 +10,7 @@ from gloss.log import log
 from gloss.metrics import MetricsRecorder
 from gloss.overlay.tk_overlay import OverlayError, OverlayGeometry, show_overlay_text
 from gloss.visual.capture import CaptureError, make_screen_capture
+from gloss.visual.display import default_overlay_geometry, enable_dpi_awareness
 from gloss.visual.engine import VisualEngine, VisualEngineError
 from gloss.visual.models import CaptureResult, Rect
 from gloss.visual.ocr import OcrError, WindowsOcr, ocr_metrics
@@ -66,7 +67,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dry-run", action="store_true", help="Skip backend call.")
     parser.add_argument("--output", type=Path, help="Write translated text to this file.")
     parser.add_argument("--overlay", action="store_true", help="Show output in overlay.")
-    parser.add_argument("--overlay-rect", default="80,720,1000,180")
+    parser.add_argument("--overlay-rect", help="Physical-pixel X,Y,WIDTH,HEIGHT; default bottom-center.")
     parser.add_argument("--overlay-duration", type=float, default=6.0)
     return parser
 
@@ -74,8 +75,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    enable_dpi_awareness()
 
     try:
+        if (args.vlm or args.image_file) and not 256 <= args.vlm_max_edge <= 2048:
+            raise VisualEngineError("--vlm-max-edge must be between 256 and 2048.")
         source_text = read_ocr_text(args)
         if args.image_file and args.capture_rect:
             raise VisualEngineError("Use --image-file or --capture-rect, not both.")
@@ -167,7 +171,7 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.write(output_text)
 
     if args.overlay:
-        geometry = OverlayGeometry.parse(args.overlay_rect)
+        geometry = OverlayGeometry.parse(args.overlay_rect) if args.overlay_rect else default_overlay_geometry()
         show_overlay_text(
             output_text.strip(),
             geometry=geometry,

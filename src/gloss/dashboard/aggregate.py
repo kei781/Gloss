@@ -66,12 +66,23 @@ def load_metrics_rows(paths: list[Path]) -> tuple[list[dict[str, Any]], int]:
 
 
 def summarize(rows: list[dict[str, Any]], *, bad_lines: int = 0) -> DashboardSummary:
-    groups: dict[str, GroupSummary] = {}
+    accumulator = SummaryAccumulator()
     for row in rows:
+        accumulator.add(row)
+    return accumulator.snapshot(bad_lines=bad_lines)
+
+
+class SummaryAccumulator:
+    """Keep numeric aggregates without retaining full translated text rows."""
+
+    def __init__(self) -> None:
+        self.groups: dict[str, GroupSummary] = {}
+
+    def add(self, row: dict[str, Any]) -> None:
         engine = str(row.get("engine") or "unknown")
         phase = row.get("phase")
         key = f"{engine}/phase{phase}" if phase is not None else engine
-        group = groups.setdefault(key, GroupSummary(key=key))
+        group = self.groups.setdefault(key, GroupSummary(key=key))
         group.requests += 1
         group.source_chars += _as_int(row.get("sourceChars"))
         group.translated_chars += _as_int(row.get("translatedChars"))
@@ -81,10 +92,9 @@ def summarize(rows: list[dict[str, Any]], *, bad_lines: int = 0) -> DashboardSum
         if isinstance(recorded, str):
             if group.last_recorded_at is None or recorded > group.last_recorded_at:
                 group.last_recorded_at = recorded
-
         generation = row.get("generation")
         if not isinstance(generation, dict):
-            continue
+            return
         group.completion_tokens += _as_int(generation.get("completion_tokens"))
         group.prompt_tokens += _as_int(generation.get("prompt_tokens"))
         if generation.get("truncated"):
@@ -97,12 +107,13 @@ def summarize(rows: list[dict[str, Any]], *, bad_lines: int = 0) -> DashboardSum
         _append_value(group.e2e_tps_values, generation.get("end_to_end_tokens_per_second"))
         _append_value(group.elapsed_values, generation.get("elapsed_s"))
 
-    ordered = sorted(groups.values(), key=lambda group: group.key)
-    return DashboardSummary(
-        total_requests=sum(group.requests for group in ordered),
-        bad_lines=bad_lines,
-        groups=ordered,
-    )
+    def snapshot(self, *, bad_lines: int = 0) -> DashboardSummary:
+        ordered = sorted(self.groups.values(), key=lambda group: group.key)
+        return DashboardSummary(
+            total_requests=sum(group.requests for group in ordered),
+            bad_lines=bad_lines,
+            groups=ordered,
+        )
 
 
 def stats_of(values: list[float]) -> Stats:

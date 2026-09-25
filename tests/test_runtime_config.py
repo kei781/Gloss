@@ -19,7 +19,7 @@ class RuntimeConfigTest(unittest.TestCase):
                   "profiles": {
                     "fallback": {
                       "runtime_model": "phi-3.5-mini",
-                      "serve": { "base_url": "http://127.0.0.1:11435/v1" },
+                      "serve": { "base_url": "http://127.0.0.1:11435/v1", "max_prompt_len": 2048 },
                       "measurement": { "max_tokens": 64 }
                     }
                   }
@@ -44,6 +44,8 @@ class RuntimeConfigTest(unittest.TestCase):
         self.assertEqual(runtime.model, "phi-3.5-mini")
         self.assertEqual(runtime.max_tokens, 1024)
         self.assertEqual(runtime.base_url, "http://127.0.0.1:11435/v1")
+        self.assertEqual(runtime.max_prompt_len, 2048)
+        self.assertEqual(runtime.source_token_budget, 960)
 
     def test_phase1_max_tokens_can_be_configured_separately(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

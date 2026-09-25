@@ -114,7 +114,9 @@ class OpenAIChatClient:
                         first_token_at = time.perf_counter()
                     chunks += 1
                     output_parts.append(text)
-        except (HTTPError, URLError, TimeoutError, OSError) as exc:
+        except HTTPError as exc:
+            raise BackendError(_http_error_message(exc)) from exc
+        except (URLError, TimeoutError, OSError) as exc:
             raise BackendError(str(exc)) from exc
 
         ended_at = time.perf_counter()
@@ -136,7 +138,9 @@ class OpenAIChatClient:
             response = self._post_json(payload)
             with response:
                 data = json.loads(response.read().decode("utf-8"))
-        except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+        except HTTPError as exc:
+            raise BackendError(_http_error_message(exc)) from exc
+        except (URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
             raise BackendError(str(exc)) from exc
 
         ended_at = time.perf_counter()
@@ -167,6 +171,14 @@ class OpenAIChatClient:
 
 class BackendError(RuntimeError):
     pass
+
+
+def _http_error_message(error: HTTPError) -> str:
+    try:
+        detail = error.read(4096).decode("utf-8", errors="replace").strip()
+    except OSError:
+        detail = ""
+    return f"{error}: {detail}" if detail else str(error)
 
 
 def _extract_delta_text(event: dict[str, Any]) -> str:

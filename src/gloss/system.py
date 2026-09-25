@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import ctypes
 from dataclasses import dataclass
-import json
 import re
 import sys
+
+from gloss.log import log
 
 
 class SystemMetricsError(RuntimeError):
@@ -29,33 +30,21 @@ class SystemSample:
     npu_percent: float | None = None
 
 
-def npu_percent_from_counter_json(payload: str, luid: int) -> float | None:
-    """Sum compute-engine samples for one LUID, excluding Arc GPU engines."""
-    try:
-        rows = json.loads(payload)
-    except (ValueError, TypeError):
-        return None
-    if isinstance(rows, dict):
-        rows = [rows]
-    if not isinstance(rows, list):
-        return None
-    return _npu_percent_from_rows(rows, luid)
-
-
-def _npu_percent_from_rows(rows: list[dict], luid: int) -> float | None:
+def npu_percent_from_rows(rows: list[dict], luid: int) -> float | None:
+    """Sum compute-engine samples for one LUID across all processes."""
     total = 0.0
     found = False
     for row in rows:
         if not isinstance(row, dict):
             continue
-        instance = str(row.get("InstanceName") or row.get("inst") or "").lower()
+        instance = str(row.get("InstanceName") or "").lower()
         match = re.search(r"luid_0x([0-9a-f]+)_0x([0-9a-f]+)", instance)
         if not match or "engtype_compute" not in instance:
             continue
         instance_luid = (int(match.group(1), 16) << 32) | int(match.group(2), 16)
         if instance_luid != luid:
             continue
-        value = row.get("CookedValue", row.get("val"))
+        value = row.get("CookedValue")
         if isinstance(value, (int, float)) and not isinstance(value, bool):
             total += max(0.0, float(value))
             found = True
@@ -82,6 +71,7 @@ class WindowsNpuSampler:
         self._query = ctypes.c_void_p()
         self._counter = ctypes.c_void_p()
         self._pdh = None
+        self._missing_luid_logged = False
         if sys.platform != "win32":
             return
         try:
@@ -136,7 +126,25 @@ class WindowsNpuSampler:
             for index in range(count.value)
             if items[index].FmtValue.CStatus in (0, 1)
         ]
-        return _npu_percent_from_rows(rows, self.luid)
+        value = npu_percent_from_rows(rows, self.luid)
+        if value is None and rows and not self._missing_luid_logged:
+            observed = sorted({
+                (int(match.group(1), 16) << 32) | int(match.group(2), 16)
+                for row in rows
+                if "engtype_compute" in str(row["InstanceName"]).lower()
+                if (match := re.search(
+                    r"luid_0x([0-9a-f]+)_0x([0-9a-f]+)",
+                    str(row["InstanceName"]).lower(),
+                ))
+            })
+            if observed:
+                log(
+                    "configured NPU LUID not found in compute counters",
+                    level="WARN", configured=hex(self.luid),
+                    observed=",".join(hex(item) for item in observed),
+                )
+                self._missing_luid_logged = True
+        return value
 
     def close(self) -> None:
         if self._pdh is not None and self._query:

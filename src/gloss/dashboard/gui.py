@@ -9,10 +9,10 @@ import sys
 import time
 
 from gloss.backend.probe import BackendStatus, probe_backend
-from gloss.dashboard.aggregate import format_summary, load_metrics_rows, summarize
-from gloss.dashboard.cli import DEFAULT_BASE_URL, DEFAULT_METRICS
-from gloss.env import env_value, load_env_file
-from gloss.system import SystemSample, WindowsSystemSampler
+from gloss.dashboard.aggregate import SummaryAccumulator, format_summary
+from gloss.dashboard.cli import resolve_dashboard_settings
+from gloss.dashboard.live import JsonlTail
+from gloss.system import SystemMetricsError, SystemSample, WindowsSystemSampler
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -27,16 +27,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def decode_sparkline(rows: list[dict], limit: int = 40) -> str:
-    values: list[float] = []
-    recent = sorted(rows, key=lambda row: str(row.get("recordedAt") or ""))[-limit * 3:]
-    for row in recent:
+    valid: list[tuple[str, float]] = []
+    for row in rows:
         generation = row.get("generation")
         if not isinstance(generation, dict):
             continue
         rate = generation.get("tokens_per_second")
         if isinstance(rate, (int, float)) and not isinstance(rate, bool) and rate >= 0:
-            values.append(float(rate))
-    values = values[-limit:]
+            valid.append((str(row.get("recordedAt") or ""), float(rate)))
+    values = [rate for _timestamp, rate in sorted(valid)[-limit:]]
     if not values:
         return "decode tok/s: no samples"
     peak = max(values) or 1.0
@@ -60,22 +59,12 @@ def main(argv: list[str] | None = None) -> int:
         print("Desktop dashboard requires: pip install -e '.[gui]'", file=sys.stderr)
         return 1
 
-    load_env_file(args.env_file or Path("phase0/.env"))
-    base_url = args.base_url or env_value(
-        "GLOSS_PHASE4_BASE_URL", "GLOSS_PHASE1_BASE_URL", "GLOSS_PHASE0_BASE_URL",
-        "GLOSS_OPENAI_BASE_URL",
-    ) or DEFAULT_BASE_URL
-    api_key = args.api_key or env_value(
-        "GLOSS_PHASE4_API_KEY", "GLOSS_PHASE1_API_KEY", "GLOSS_PHASE0_API_KEY",
-        "OPENAI_API_KEY",
-    ) or "local"
-    luid_text = args.npu_luid or env_value("GLOSS_NPU_LUID")
     try:
-        luid = int(luid_text, 0) if luid_text else None
-    except ValueError:
-        raise SystemExit("--npu-luid must be an integer such as 0x11b60")
-    sampler = WindowsSystemSampler(npu_luid=luid)
-    paths = args.metrics or DEFAULT_METRICS
+        settings = resolve_dashboard_settings(args)
+        sampler = WindowsSystemSampler(npu_luid=settings.npu_luid)
+    except (ValueError, SystemMetricsError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
 
     app = QApplication(sys.argv[:1])
     window = QMainWindow()
@@ -108,21 +97,40 @@ def main(argv: list[str] | None = None) -> int:
     pending: Future | None = None
     last_probe: BackendStatus | None = None
     last_probe_at = 0.0
+    tails = [JsonlTail(path, include_existing=True) for path in settings.metrics_paths]
+    accumulator = SummaryAccumulator()
+    recent_rows: list[dict] = []
+    force_probe_next = False
 
-    def collect():
+    def collect(force_probe: bool = False):
         nonlocal last_probe, last_probe_at
         system: SystemSample = sampler.sample()
-        rows, bad_lines = load_metrics_rows(paths)
+        rows = [row for tail in tails for row in tail.read_new()]
+        for row in rows:
+            accumulator.add(row)
+        recent_rows.extend(
+            row for row in rows
+            if isinstance(row.get("generation"), dict)
+            and isinstance(row["generation"].get("tokens_per_second"), (int, float))
+            and not isinstance(row["generation"].get("tokens_per_second"), bool)
+        )
+        recent_rows[:] = sorted(
+            recent_rows, key=lambda row: str(row.get("recordedAt") or "")
+        )[-40:]
         now = time.monotonic()
-        if last_probe is None or now - last_probe_at >= 30:
-            last_probe = probe_backend(base_url, api_key=api_key)
+        if force_probe or last_probe is None or now - last_probe_at >= 30:
+            last_probe = probe_backend(settings.base_url, api_key=settings.api_key)
             last_probe_at = now
-        return format_summary(summarize(rows, bad_lines=bad_lines), system=system, backend=last_probe), decode_sparkline(rows)
+        summary = accumulator.snapshot(bad_lines=sum(tail.bad_lines for tail in tails))
+        return format_summary(summary, system=system, backend=last_probe), decode_sparkline(recent_rows)
 
-    def request_refresh() -> None:
-        nonlocal pending
+    def request_refresh(force_probe: bool = False) -> None:
+        nonlocal pending, force_probe_next
         if pending is None:
-            pending = executor.submit(collect)
+            pending = executor.submit(collect, force_probe or force_probe_next)
+            force_probe_next = False
+        elif force_probe:
+            force_probe_next = True
 
     def poll() -> None:
         nonlocal pending
@@ -135,11 +143,28 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as exc:
             status.setText(f"Refresh failed: {exc}")
             return
-        detail.setPlainText(summary_text)
+        if detail.toPlainText() != summary_text:
+            vertical = detail.verticalScrollBar()
+            horizontal = detail.horizontalScrollBar()
+            vertical_value, horizontal_value = vertical.value(), horizontal.value()
+            cursor = detail.textCursor()
+            anchor, position = cursor.anchor(), cursor.position()
+            has_selection = cursor.hasSelection()
+            detail.setPlainText(summary_text)
+            if has_selection:
+                from PyQt6.QtGui import QTextCursor
+                restored = detail.textCursor()
+                restored.setPosition(min(anchor, len(summary_text)))
+                restored.setPosition(min(position, len(summary_text)), QTextCursor.MoveMode.KeepAnchor)
+                detail.setTextCursor(restored)
+            vertical.setValue(vertical_value)
+            horizontal.setValue(horizontal_value)
         chart.setText(chart_text)
-        status.setText(f"Updated {time.strftime('%H:%M:%S')} · {base_url}")
+        status.setText(f"Updated {time.strftime('%H:%M:%S')} · {settings.base_url}")
+        if force_probe_next:
+            request_refresh(True)
 
-    refresh.clicked.connect(request_refresh)
+    refresh.clicked.connect(lambda: request_refresh(True))
     timer = QTimer(window)
     timer.timeout.connect(request_refresh)
     timer.start(int(args.interval * 1000))

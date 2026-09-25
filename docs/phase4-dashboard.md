@@ -41,7 +41,7 @@ phase 1~3 메트릭 파일을 집계해 한 번 출력하고 종료한다.
 
 - 새 번역 요청이 기록되면 `request completed` 라인으로 디코드 tok/s, TTFT, 토큰, truncated 여부, **생성 구간 평균 CPU%** 를 보여준다.
 - **FR-D6 silent CPU fallback 휴리스틱**: NPU 카운터가 지정되지 않았거나 생성 구간 샘플이 부족할 때, 평균 CPU%가 임계값(기본 65%) 이상이면 `possible silent CPU fallback` WARN을 띄운다. 이는 ADR-009의 보조 증거이며 `dry_run`은 제외한다.
-- `--npu-luid 0x11b60`(또는 `GLOSS_NPU_LUID`)을 지정하면 Windows GPU Engine의 해당 LUID `engtype_compute` 카운터를 샘플링한다. 지정한 LUID에서 생성 구간에 2개 이상 샘플이 있고 평균이 1% 미만이면 NPU 미사용 경고를 낸다. 카운터가 없으면 NPU 값은 생략하고 CPU 휴리스틱을 사용한다. `0x11b60`은 2026-06-20 실기 검증 당시의 예시이므로 현재 OpenVINO NPU plugin 로그의 `DEVICE_LUID`를 확인해 값을 지정한다. 단일 `--once` 샘플은 추론 중 NPU 사용 증명이 아니다.
+- `--npu-luid 0x11b60` 또는 OpenVINO 로그의 16자리 `DEVICE_LUID`(예: `601b010000000000`)를 지정하면 Windows GPU Engine의 해당 LUID `engtype_compute` 카운터를 샘플링한다. 16자리 값은 little-endian 바이트 순서로 변환한다. 지정한 LUID에서 생성 구간에 2개 이상 샘플이 있고 평균이 1% 미만이면 NPU 미사용 경고를 낸다. 카운터가 없으면 NPU 값은 생략하고 CPU 휴리스틱을 사용한다. `0x11b60`은 2026-06-20 실기 검증 당시의 예시이므로 현재 OpenVINO NPU plugin 로그의 `DEVICE_LUID`를 확인해 값을 지정한다. 단일 `--once` 샘플은 추론 중 NPU 사용 증명이 아니다.
   카운터는 Win32 PDH API를 직접 호출해 읽으며, 매 틱마다 PowerShell 프로세스를 띄우지 않는다.
 - `--probe-every`(기본 30초) 간격으로 백엔드 상태 라인을 남긴다.
 - 종료는 Ctrl+C (또는 테스트용 `--max-ticks N`).
@@ -62,6 +62,7 @@ GetSystemTimes/GlobalMemoryStatusEx ┘      │
 ## 한계
 
 - FR-D6 CPU 휴리스틱은 시스템 전역 CPU%라 다른 프로그램(게임 등)의 부하와 구분하지 못한다. 게임 중에는 NPU 카운터와 백엔드 로그를 함께 본다.
-- GPU Engine 카운터가 현 장비에 없거나 LUID가 달라지면 NPU 사용률은 표시되지 않는다. 백엔드 로그와 동시 부하 샘플로 다시 대조한다.
+- GPU Engine 카운터가 현 장비에 없거나 LUID가 달라지면 NPU 사용률은 표시되지 않는다. 일치하는 compute LUID가 없으면 관측된 LUID를 경고 로그에 남긴다. 백엔드 로그와 동시 부하 샘플로 다시 대조한다.
+- GPU Engine NPU 사용률은 지정 LUID를 쓰는 모든 프로세스의 합계다. Gloss/OVMS 단독 사용률 증거로 해석하지 않는다. 높은 CPU 사용 경고는 다른 프로세스의 NPU 사용률이 관측되어도 별도로 평가한다.
 - 대시보드는 메트릭 파일 기반이라 요청 진행 중이 아닌 **완료 시점**에 행이 보인다.
 - `--once`의 합계는 파일 전체 누적이다. 세션별로 보려면 메트릭 파일을 분리하라.

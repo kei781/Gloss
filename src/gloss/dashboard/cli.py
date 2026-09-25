@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 from pathlib import Path
+import re
 import sys
 import time
 
@@ -19,6 +21,45 @@ DEFAULT_METRICS = [
     Path("runs/phase3/watch-metrics.jsonl"),
 ]
 DEFAULT_BASE_URL = "http://127.0.0.1:8000/v3"
+
+
+@dataclass(frozen=True)
+class DashboardSettings:
+    metrics_paths: list[Path]
+    base_url: str
+    api_key: str
+    npu_luid: int | None
+
+
+def parse_npu_luid(value: str) -> int:
+    text = value.strip()
+    if re.fullmatch(r"[0-9a-fA-F]{16}", text):
+        # OpenVINO DEVICE_LUID prints the eight bytes in memory order.
+        return int.from_bytes(bytes.fromhex(text), "little")
+    try:
+        return int(text, 0)
+    except ValueError:
+        return int(text, 16)
+
+
+def resolve_dashboard_settings(args: argparse.Namespace) -> DashboardSettings:
+    env_file = args.env_file or Path("phase0/.env")
+    if load_env_file(env_file):
+        log("loaded env file", path=str(env_file))
+    base_url = args.base_url or env_value(
+        "GLOSS_PHASE4_BASE_URL", "GLOSS_PHASE1_BASE_URL", "GLOSS_PHASE0_BASE_URL",
+        "GLOSS_OPENAI_BASE_URL",
+    ) or DEFAULT_BASE_URL
+    api_key = args.api_key or env_value(
+        "GLOSS_PHASE4_API_KEY", "GLOSS_PHASE1_API_KEY", "GLOSS_PHASE0_API_KEY",
+        "OPENAI_API_KEY",
+    ) or "local"
+    luid_text = args.npu_luid or env_value("GLOSS_NPU_LUID")
+    try:
+        npu_luid = parse_npu_luid(luid_text) if luid_text else None
+    except ValueError as exc:
+        raise ValueError("invalid --npu-luid; use 0x11b60 or the 16-digit OpenVINO DEVICE_LUID") from exc
+    return DashboardSettings(args.metrics or DEFAULT_METRICS, base_url, api_key, npu_luid)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -74,63 +115,33 @@ def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="replace")
 
-    env_file = args.env_file or Path("phase0/.env")
-    if load_env_file(env_file):
-        log("loaded env file", path=str(env_file))
-
-    base_url = (
-        args.base_url
-        or env_value(
-            "GLOSS_PHASE4_BASE_URL",
-            "GLOSS_PHASE1_BASE_URL",
-            "GLOSS_PHASE0_BASE_URL",
-            "GLOSS_OPENAI_BASE_URL",
-        )
-        or DEFAULT_BASE_URL
-    )
-    api_key = (
-        args.api_key
-        or env_value(
-            "GLOSS_PHASE4_API_KEY",
-            "GLOSS_PHASE1_API_KEY",
-            "GLOSS_PHASE0_API_KEY",
-            "OPENAI_API_KEY",
-        )
-        or "local"
-    )
-    metrics_paths = args.metrics or DEFAULT_METRICS
-
-    npu_luid_text = args.npu_luid or env_value("GLOSS_NPU_LUID")
     try:
-        npu_luid = int(npu_luid_text, 0) if npu_luid_text else None
-    except ValueError:
-        log("invalid --npu-luid; expected an integer such as 0x11b60", level="ERROR")
+        settings = resolve_dashboard_settings(args)
+    except ValueError as exc:
+        log(str(exc), level="ERROR")
         return 1
 
     try:
-        sampler = (
-            WindowsSystemSampler(npu_luid=npu_luid)
-            if npu_luid is not None else WindowsSystemSampler()
-        )
+        sampler = WindowsSystemSampler(npu_luid=settings.npu_luid)
     except SystemMetricsError as exc:
         log(str(exc), level="ERROR")
         return 1
 
     if args.once:
-        rows, bad_lines = load_metrics_rows(metrics_paths)
+        rows, bad_lines = load_metrics_rows(settings.metrics_paths)
         summary = summarize(rows, bad_lines=bad_lines)
         sampler.sample()
         time.sleep(0.3)  # CPU% needs two samples
         system = sampler.sample()
-        backend = probe_backend(base_url, api_key=api_key)
+        backend = probe_backend(settings.base_url, api_key=settings.api_key)
         sys.stdout.write(format_summary(summary, system=system, backend=backend))
         return 0
 
     dashboard = LiveDashboard(
-        tails=[JsonlTail(path) for path in metrics_paths],
+        tails=[JsonlTail(path) for path in settings.metrics_paths],
         sampler=sampler,
-        base_url=base_url,
-        api_key=api_key,
+        base_url=settings.base_url,
+        api_key=settings.api_key,
         config=LiveConfig(
             interval_s=args.interval,
             cpu_threshold=args.cpu_threshold,

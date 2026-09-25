@@ -1,6 +1,8 @@
 from pathlib import Path
 from importlib.util import find_spec
+import sys
 import tempfile
+import types
 import unittest
 from unittest import mock
 
@@ -8,6 +10,7 @@ from gloss.text.engine import estimate_source_tokens, split_text_blocks
 from gloss.text.extractors import (
     ExtractionError,
     _ocr_pdf_page,
+    extract_pdf,
     build_url_ssl_context,
     extract_readable_text_from_html,
     extract_text_source,
@@ -16,6 +19,21 @@ from gloss.text.extractors import (
 
 
 class TextExtractionTest(unittest.TestCase):
+    def test_pdf_batches_blank_pages_and_keeps_page_order_when_ocr_fails(self) -> None:
+        fake_reader = types.SimpleNamespace(pages=[
+            mock.Mock(extract_text=lambda: "Native first"),
+            mock.Mock(extract_text=lambda: ""),
+            mock.Mock(extract_text=lambda: ""),
+            mock.Mock(extract_text=lambda: "Native last"),
+        ])
+        with mock.patch.dict(sys.modules, {"pypdf": types.SimpleNamespace(PdfReader=lambda _path: fake_reader)}):
+            with mock.patch("gloss.text.extractors._ocr_pdf_pages", return_value={
+                1: "OCR middle", 2: ExtractionError("unreadable"),
+            }) as ocr:
+                document = extract_pdf(Path("sample.pdf"))
+        ocr.assert_called_once_with(Path("sample.pdf"), [1, 2], ocr_language=None, cancel=None)
+        self.assertEqual(document.text, "Page 1\nNative first\n\nPage 2\nOCR middle\n\nPage 4\nNative last")
+
     def test_next_page_url_stays_on_same_site(self) -> None:
         html = """
         <link rel="next" href="https://other.example/chapter/2">
@@ -25,6 +43,29 @@ class TextExtractionTest(unittest.TestCase):
             find_next_page_url(html, "https://story.example/chapter/1"),
             "https://story.example/chapter/2",
         )
+
+    def test_next_page_uses_document_base_and_escapes_non_ascii(self) -> None:
+        html = '<base href="/chapters/"><a rel="next" href="다음 화 2">Next</a>'
+        self.assertEqual(
+            find_next_page_url(html, "https://story.example/redirected/1"),
+            "https://story.example/chapters/%EB%8B%A4%EC%9D%8C%20%ED%99%94%202",
+        )
+
+    def test_later_page_failure_keeps_previous_pages(self) -> None:
+        html = '<main><p>First page.</p></main><a rel="next" href="/2">Next</a>'
+        with mock.patch("gloss.text.extractors.fetch_url", side_effect=[
+            (html, "https://story.example/redirected/1"), ExtractionError("HTTP 500"),
+        ]) as fetch:
+            document = extract_text_source(url="https://story.example/1", next_pages=2)
+        self.assertEqual(fetch.call_count, 2)
+        self.assertIn("First page.", document.text)
+
+    def test_long_text_preserves_line_breaks_and_limits_digit_heavy_blocks(self) -> None:
+        source = "First sentence.\nSecond sentence.\n" + "1234567890" * 90
+        blocks = list(split_text_blocks(source, max_chars=1800, max_estimated_tokens=480))
+        self.assertIn("First sentence.\nSecond sentence.", blocks[0])
+        self.assertGreater(len(blocks), 1)
+        self.assertTrue(all(estimate_source_tokens(block) <= 480 for block in blocks))
 
     def test_url_pagination_stops_on_cycle(self) -> None:
         pages = {
@@ -58,7 +99,7 @@ class TextExtractionTest(unittest.TestCase):
             pdf = canvas.Canvas(str(path))
             pdf.drawString(72, 720, "The old town slept under moonlight.")
             pdf.save()
-            with mock.patch("gloss.text.extractors._ocr_pdf_page") as ocr:
+            with mock.patch("gloss.text.extractors._ocr_pdf_pages") as ocr:
                 document = extract_text_source(file=path)
 
             self.assertIn("Page 1", document.text)
@@ -74,11 +115,11 @@ class TextExtractionTest(unittest.TestCase):
             pdf = canvas.Canvas(str(path))
             pdf.showPage()
             pdf.save()
-            with mock.patch("gloss.text.extractors._ocr_pdf_page", return_value="Scanned dialog") as ocr:
+            with mock.patch("gloss.text.extractors._ocr_pdf_pages", return_value={0: "Scanned dialog"}) as ocr:
                 document = extract_text_source(file=path, pdf_ocr_language="en-US")
 
             self.assertIn("Scanned dialog", document.text)
-            ocr.assert_called_once_with(path, 0, ocr_language="en-US")
+            ocr.assert_called_once_with(path, [0], ocr_language="en-US", cancel=None)
 
     @unittest.skipUnless(find_spec("pypdf") and find_spec("reportlab"), "PDF test dependencies unavailable")
     def test_blank_pdf_page_does_not_hide_readable_pages(self) -> None:
@@ -91,11 +132,11 @@ class TextExtractionTest(unittest.TestCase):
             pdf.showPage()
             pdf.showPage()
             pdf.save()
-            with mock.patch("gloss.text.extractors._ocr_pdf_page", return_value="") as ocr:
+            with mock.patch("gloss.text.extractors._ocr_pdf_pages", return_value={1: ""}) as ocr:
                 document = extract_text_source(file=path)
 
         self.assertIn("A readable first page.", document.text)
-        ocr.assert_called_once_with(path, 1, ocr_language=None)
+        ocr.assert_called_once_with(path, [1], ocr_language=None, cancel=None)
 
     @unittest.skipUnless(find_spec("pypdfium2") and find_spec("reportlab"), "PDF rendering dependencies unavailable")
     def test_scanned_pdf_page_is_rendered_before_ocr(self) -> None:
@@ -113,7 +154,7 @@ class TextExtractionTest(unittest.TestCase):
                 return mock.Mock(text="Screen text")
 
             with mock.patch("gloss.visual.ocr.WindowsOcr") as ocr_class:
-                ocr_class.return_value.recognize.side_effect = recognize
+                ocr_class.return_value.recognize_many.side_effect = lambda paths: [recognize(paths[0])]
                 text = _ocr_pdf_page(path, 0, ocr_language="en-US")
             self.assertEqual(text, "Screen text")
 

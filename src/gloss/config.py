@@ -26,6 +26,12 @@ class RuntimeConfig:
     timeout_s: float
     config_path: Path | None
     env_file: Path | None
+    max_prompt_len: int = 1024
+
+    @property
+    def source_token_budget(self) -> int:
+        # Leave room for the chat template and a translation of similar length.
+        return max(32, 480 * self.max_prompt_len // 1024)
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -159,6 +165,10 @@ def load_runtime_config(
         )
     )
 
+    selected_max_prompt_len = int(first_defined(
+        _nested_get(profile_doc, "serve", "max_prompt_len"), default=1024,
+    ))
+
     selected_max_tokens = int(
         first_defined(
             max_tokens,
@@ -198,4 +208,5 @@ def load_runtime_config(
         timeout_s=selected_timeout,
         config_path=resolved_config,
         env_file=resolved_env,
+        max_prompt_len=selected_max_prompt_len,
     )

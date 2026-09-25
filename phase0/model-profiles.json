@@ -35,13 +35,15 @@
       "artifact": {
         "source": "OpenVINO Model Hub / optimum-cli export openvino",
         "hf_id": "Qwen/Qwen3-4B-Instruct-2507",
-        "local_dir": ".models/ovms/qwen3-4b-instruct-2507",
-        "note": "Intel NPU용 OpenVINO IR(.xml/.bin)로 export 후 이 profile을 그대로 사용한다. `optimum-cli export openvino --model Qwen/Qwen3-4B-Instruct-2507 --weight-format int4`로 IR 확보."
+        "pull_extra_quantization_params": "--sym --group-size -1 --ratio 1.0",
+        "local_dir": ".models/ovms/Qwen/Qwen3-4B-Instruct-2507",
+        "note": "Intel NPU용 대칭 INT4 IR(.xml/.bin)로 export 후 사용한다. OVMS pull은 --sym --group-size -1 --ratio 1.0을 전달한다."
       },
       "serve": {
         "base_url": "http://127.0.0.1:8000/v3",
         "pipeline_type": "LM",
-        "command": "ovms --rest_port 8000 --model_repository_path .models/ovms --model_name qwen3-4b-instruct-2507 --target_device NPU --pipeline_type LM --task text_generation"
+        "max_prompt_len": 1024,
+        "command": "ovms --rest_port 8000 --model_path .models/ovms/Qwen/Qwen3-4B-Instruct-2507 --model_name qwen3-4b-instruct-2507 --target_device NPU --pipeline_type LM --task text_generation --max_prompt_len 1024"
       },
       "measurement": {
         "runs": 3,
@@ -70,7 +72,7 @@
       "serve": {
         "base_url": "http://127.0.0.1:8000/v3",
         "pipeline_type": "LM",
-        "command": "ovms --rest_port 8000 --model_repository_path .models/ovms --model_name phi-3.5-mini --target_device NPU --pipeline_type LM --task text_generation"
+        "command": "ovms --rest_port 8000 --model_path .models/ovms/phi-3.5-mini --model_name phi-3.5-mini --target_device NPU --pipeline_type LM --task text_generation"
       },
       "measurement": {
         "runs": 3,
@@ -83,26 +85,28 @@
       "display_name": "Qwen3-VL-4B",
       "backend": "ovms",
       "runtime_model": "qwen3-vl-4b",
-      "status": "target_external_bundle_required",
+      "status": "npu_validation_required",
       "capabilities": [
         "text",
         "vision"
       ],
-      "quantization": "INT4 (OpenVINO weight compression, sym)",
+      "quantization": "INT4 symmetric, group size 128 (NPU export candidate)",
       "context_length": 4096,
-      "openvino_min": "2025.3",
+      "openvino_min": "2026.3.0",
+      "optimum_intel_min": "1.27.0",
       "target_device": "NPU",
       "artifact": {
-        "source": "OpenVINO Hub preconverted INT4 IR",
-        "hf_id": "OpenVINO/Qwen3-VL-4B-Instruct-int4-ov",
-        "preconverted": true,
-        "local_dir": ".models/ovms/qwen3-vl-4b",
-        "note": "Visual 기본 후보. OpenVINO 공식 INT4 IR을 pull할 수 있다. vision encode가 Intel X7 358H NPU에 올라가는지 Phase 0에서 별도 확인한다."
+        "source": "Qwen Hugging Face original / OVMS Optimum Intel export",
+        "hf_id": "Qwen/Qwen3-VL-4B-Instruct",
+        "pull_extra_quantization_params": "--sym --group-size 128 --ratio 1.0",
+        "local_dir": ".models/ovms/Qwen/Qwen3-VL-4B-Instruct",
+        "note": "Visual 후보. 공개 OpenVINO INT4 IR은 비대칭 양자화라 이 프로파일은 원본에서 NPU용 대칭 INT4 변환을 요청한다. X7 358H에서 변환·vision encode NPU 실행은 미검증."
       },
       "serve": {
         "base_url": "http://127.0.0.1:8000/v3",
         "pipeline_type": "VLM",
-        "command": "ovms --rest_port 8000 --model_repository_path .models/ovms --model_name qwen3-vl-4b --target_device NPU --pipeline_type VLM --task text_generation"
+        "max_prompt_len": 2048,
+        "command": "ovms --rest_port 8000 --model_path .models/ovms/Qwen/Qwen3-VL-4B-Instruct --model_name qwen3-vl-4b --target_device NPU --pipeline_type VLM --task text_generation --max_prompt_len 2048"
       },
       "measurement": {
         "runs": 3,
@@ -157,7 +161,7 @@
       "artifact": {
         "source": "Google Hugging Face original / OVMS Optimum Intel export",
         "hf_id": "google/gemma-4-E2B-it",
-        "local_dir": ".models/ovms/gemma-4-e2b",
+        "local_dir": ".models/ovms/google/gemma-4-E2B-it",
         "pull_extra_quantization_params": "--sym --group-size 128 --ratio 1.0",
         "note": "빠른 번역 후보. OVMS 2026.4+ Python/Optimum export 빌드와 Gemma 4 지원 Optimum Intel 2.2+ 필요. 공식 사전 변환 OpenVINO INT4 IR은 INT4_ASYM/group 128이므로 NPU 대칭 INT4 지침과 다르다. 이 raw-model export/OVMS VLM의 X7 358H NPU 적재·번역 품질은 미검증."
       },
@@ -165,7 +169,7 @@
         "base_url": "http://127.0.0.1:8000/v3",
         "pipeline_type": "VLM",
         "max_prompt_len": 2048,
-        "command": "ovms --rest_port 8000 --model_repository_path .models/ovms --model_name gemma-4-e2b --target_device NPU --pipeline_type VLM --task text_generation --max_prompt_len 2048"
+        "command": "ovms --rest_port 8000 --model_path .models/ovms/google/gemma-4-E2B-it --model_name gemma-4-e2b --target_device NPU --pipeline_type VLM --task text_generation --max_prompt_len 2048"
       },
       "measurement": {
         "runs": 3,
@@ -191,7 +195,7 @@
       "artifact": {
         "source": "Google Hugging Face original / OVMS Optimum Intel export",
         "hf_id": "google/gemma-4-E4B-it",
-        "local_dir": ".models/ovms/gemma-4-e4b",
+        "local_dir": ".models/ovms/google/gemma-4-E4B-it",
         "pull_extra_quantization_params": "--sym --group-size 128 --ratio 1.0",
         "note": "한국어 품질 우선 후보. E4B는 총 8B 파라미터(임베딩 포함)여서 NPU 메모리·속도를 실측해야 한다. 공식 사전 변환 INT4 IR은 실험적이며 INT4_ASYM/group 128이다. OVMS 2026.4+ 및 Gemma 4 지원 Optimum Intel 2.2+에서 raw export/OVMS VLM의 X7 358H NPU 적재·번역 품질은 미검증."
       },
@@ -199,7 +203,7 @@
         "base_url": "http://127.0.0.1:8000/v3",
         "pipeline_type": "VLM",
         "max_prompt_len": 2048,
-        "command": "ovms --rest_port 8000 --model_repository_path .models/ovms --model_name gemma-4-e4b --target_device NPU --pipeline_type VLM --task text_generation --max_prompt_len 2048"
+        "command": "ovms --rest_port 8000 --model_path .models/ovms/google/gemma-4-E4B-it --model_name gemma-4-e4b --target_device NPU --pipeline_type VLM --task text_generation --max_prompt_len 2048"
       },
       "measurement": {
         "runs": 3,

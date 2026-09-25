@@ -160,9 +160,12 @@ if (-not [string]::IsNullOrWhiteSpace($baseUrl)) {
 $arguments = @()
 switch ($Action) {
     "serve" {
+        # OVMS pull stores the generated graph under <repository>/<source_model>.
+        # Serving that exact path also avoids an implicit second HF download.
+        $modelDirectory = if ($sourceModel) { $sourceModel } else { $runtimeModel }
         $arguments = @(
             "--rest_port", $restPort,
-            "--model_repository_path", $modelsDir,
+            "--model_path", (Join-Path $modelsDir ($modelDirectory -replace '/', '\')),
             "--cache_dir", $cacheDir,
             "--model_name", $runtimeModel,
             "--target_device", $targetDevice,

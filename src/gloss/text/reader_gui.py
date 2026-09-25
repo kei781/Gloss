@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import argparse
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future
 from pathlib import Path
 import sys
+from threading import Event, Thread
 
 from gloss.backend.openai_client import OpenAIChatClient
 from gloss.config import load_runtime_config
 from gloss.metrics import MetricsRecorder
 from gloss.text.engine import TextEngine
 from gloss.text.extractors import ExtractedDocument, extract_text_source
+from gloss.visual.ocr import OcrError, WindowsOcr
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -25,6 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--url", help="Initial URL to load.")
     parser.add_argument("--file", type=Path, help="Initial file to load.")
+    parser.add_argument("--pdf-ocr-language", help="OCR language for scanned PDF pages, e.g. ja or en-US.")
     return parser
 
 
@@ -79,6 +82,23 @@ def main(argv: list[str] | None = None) -> int:
     next_pages = QSpinBox()
     next_pages.setRange(0, 20)
     options.addWidget(next_pages)
+    options.addWidget(QLabel("PDF OCR"))
+    ocr_language = QComboBox()
+    ocr_language.addItem("Auto (profile)", None)
+    try:
+        for language in WindowsOcr().list_languages():
+            tag = language.get("tag")
+            if isinstance(tag, str):
+                ocr_language.addItem(language.get("displayName") or tag, tag)
+    except OcrError:
+        pass
+    if args.pdf_ocr_language:
+        selected = ocr_language.findData(args.pdf_ocr_language)
+        if selected < 0:
+            ocr_language.addItem(args.pdf_ocr_language, args.pdf_ocr_language)
+            selected = ocr_language.count() - 1
+        ocr_language.setCurrentIndex(selected)
+    options.addWidget(ocr_language)
     options.addStretch(1)
     options.addWidget(QLabel(f"Model: {config.model}"))
     layout.addLayout(options)
@@ -104,15 +124,43 @@ def main(argv: list[str] | None = None) -> int:
     layout.addLayout(action_row)
     window.setCentralWidget(root)
 
-    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="gloss-reader")
+    cancel = Event()
     pending: Future | None = None
     pending_action = ""
     loaded: ExtractedDocument | None = None
 
     def set_busy(busy: bool, label: str) -> None:
+        source_edit.setReadOnly(busy)
+        mode.setEnabled(not busy)
+        location.setEnabled(not busy)
+        browse.setEnabled(not busy)
         load.setEnabled(not busy)
         translate.setEnabled(not busy)
+        render_js.setEnabled(not busy)
+        next_pages.setEnabled(not busy)
+        ocr_language.setEnabled(not busy)
+        save.setEnabled(not busy and bool(translated_edit.toPlainText().strip()))
         status.setText(label)
+
+    def submit_task(function, **kwargs) -> Future:
+        future = Future()
+
+        def run() -> None:
+            if not future.set_running_or_notify_cancel():
+                return
+            try:
+                future.set_result(function(**kwargs))
+            except BaseException as exc:
+                future.set_exception(exc)
+
+        Thread(target=run, daemon=True, name="gloss-reader").start()
+        return future
+
+    def invalidate_loaded() -> None:
+        nonlocal loaded
+        loaded = None
+        translated_edit.clear()
+        save.setEnabled(False)
 
     def browse_file() -> None:
         chosen, _filter = QFileDialog.getOpenFileName(
@@ -123,7 +171,7 @@ def main(argv: list[str] | None = None) -> int:
             location.setText(chosen)
 
     def load_source() -> None:
-        nonlocal pending, pending_action
+        nonlocal pending, pending_action, loaded
         selected = mode.currentText()
         if selected == "Text":
             status.setText("Paste text in the left pane.")
@@ -132,16 +180,23 @@ def main(argv: list[str] | None = None) -> int:
         if not address:
             status.setText("Enter a URL or choose a file.")
             return
+        loaded = None
+        source_edit.clear()
+        translated_edit.clear()
         pending_action = "load"
         set_busy(True, "Loading source…")
         if selected == "URL":
-            pending = executor.submit(
+            pending = submit_task(
                 extract_text_source, url=address, render_js=render_js.isChecked(),
                 next_pages=next_pages.value(),
                 timeout_s=min(config.timeout_s, 60.0),
+                cancel=cancel,
             )
         else:
-            pending = executor.submit(extract_text_source, file=Path(address))
+            pending = submit_task(
+                extract_text_source, file=Path(address),
+                pdf_ocr_language=ocr_language.currentData(), cancel=cancel,
+            )
 
     def translate_source() -> None:
         nonlocal pending, pending_action
@@ -163,9 +218,10 @@ def main(argv: list[str] | None = None) -> int:
             config=config, client=client, metrics=MetricsRecorder(config.metrics_path),
             dry_run=args.dry_run,
         )
+        translated_edit.clear()
         pending_action = "translate"
         set_busy(True, "Translating…")
-        pending = executor.submit(engine.translate, document)
+        pending = submit_task(engine.translate, document=document, cancel=cancel)
 
     def poll() -> None:
         nonlocal pending, loaded
@@ -176,6 +232,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             result = finished.result()
         except Exception as exc:
+            translated_edit.clear()
             set_busy(False, "Failed")
             QMessageBox.warning(window, "Gloss", str(exc))
             return
@@ -202,9 +259,13 @@ def main(argv: list[str] | None = None) -> int:
                 status.setText(f"Saved {chosen}")
 
     browse.clicked.connect(browse_file)
+    mode.currentTextChanged.connect(lambda _value: invalidate_loaded())
+    location.textChanged.connect(lambda _value: invalidate_loaded())
+    source_edit.textChanged.connect(lambda: (translated_edit.clear(), save.setEnabled(False)))
     load.clicked.connect(load_source)
     translate.clicked.connect(translate_source)
     save.clicked.connect(save_translation)
+    save.setEnabled(False)
     timer = QTimer(window)
     timer.timeout.connect(poll)
     timer.start(100)
@@ -220,7 +281,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return app.exec()
     finally:
-        executor.shutdown(wait=False, cancel_futures=True)
+        cancel.set()
+        if pending is not None:
+            pending.cancel()
 
 
 if __name__ == "__main__":
