@@ -1,8 +1,8 @@
 """Gloss hover daemon (FR-V2): global hotkey -> capture around cursor ->
 Windows OCR (CPU helper) -> NPU translation -> subtitle overlay.
 
-This is the interactive front for the lightweight OCR + small-LLM path
-(ADR-013). The VLM single-pass front is separate and not wired yet. Tk must
+This interactive front supports both OCR + text LLM and direct VLM input.
+Tk must
 own the main thread on Windows, so the overlay runs the Tk mainloop while a
 daemon worker polls the hotkey and drives the capture/OCR/translate pipeline.
 """
@@ -22,7 +22,8 @@ from gloss.log import log
 from gloss.metrics import MetricsRecorder
 from gloss.overlay.interactive_overlay import InteractiveOverlay
 from gloss.overlay.tk_overlay import OverlayError, OverlayGeometry
-from gloss.visual.capture import CaptureError, PowerShellScreenCapture
+from gloss.visual.capture import CaptureError, make_screen_capture
+from gloss.visual.display import default_overlay_geometry, enable_dpi_awareness
 from gloss.visual.engine import VisualEngine, VisualEngineError
 from gloss.visual.models import Rect
 from gloss.visual.ocr import OcrError, WindowsOcr, ocr_metrics
@@ -73,20 +74,7 @@ class HotkeySpec:
 
 
 def _enable_dpi_awareness() -> None:
-    """Match the DPI-aware capture helper so GetCursorPos / overlay geometry use
-    physical pixels. Without this, on a scaled display (e.g. 200%) the cursor
-    coordinates are logical and the captured region lands in the wrong place."""
-    user32 = ctypes.windll.user32
-    try:
-        # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = -4
-        if user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4)):
-            return
-    except (AttributeError, OSError):
-        pass
-    try:
-        user32.SetProcessDPIAware()
-    except (AttributeError, OSError):
-        log("could not enable DPI awareness", level="WARN")
+    enable_dpi_awareness()
 
 
 def _key_down(vk: int) -> bool:
@@ -131,12 +119,7 @@ def _region_around_cursor(width: int, height: int) -> Rect:
 
 
 def _default_overlay_geometry() -> OverlayGeometry:
-    sw, sh = _primary_screen()
-    width = min(1200, max(400, sw - 160))
-    x = (sw - width) // 2
-    height = 200
-    y = sh - height - 80
-    return OverlayGeometry(x=x, y=y, width=width, height=height)
+    return default_overlay_geometry()
 
 
 def _cleanup_capture_file(path: Path) -> None:
@@ -176,6 +159,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--overlay-opacity", type=float, default=0.88)
     parser.add_argument("--ocr-language", default="en-US", help="OCR language tag, e.g. en-US, ja, ko.")
+    parser.add_argument(
+        "--input-mode", choices=["ocr", "vlm"], default="ocr",
+        help="Use Windows OCR plus a text model, or send the captured image to a VLM.",
+    )
+    parser.add_argument(
+        "--capture-backend", choices=["auto", "wgc", "dxgi", "gdi"], default="auto",
+        help="Capture with WGC, DXGI, or GDI; auto tries them in that order.",
+    )
+    parser.add_argument(
+        "--vlm-max-edge", type=int, default=1024,
+        help="Resize the longest captured image edge before VLM inference (256-2048).",
+    )
     parser.add_argument("--poll-ms", type=int, default=60, help="Hotkey poll interval (ms).")
     parser.add_argument("--config", type=Path, help="Config JSON path.")
     parser.add_argument("--env-file", type=Path, help="Env file path.")
@@ -209,6 +204,8 @@ def main(argv: list[str] | None = None) -> int:
         region_w, region_h = (int(region_parts[0]), int(region_parts[1]))
         if region_w <= 0 or region_h <= 0:
             raise ValueError("--region width and height must be > 0.")
+        if args.input_mode == "vlm" and not 256 <= args.vlm_max_edge <= 2048:
+            raise ValueError("--vlm-max-edge must be between 256 and 2048.")
 
         geometry = (
             OverlayGeometry.parse(args.overlay_rect)
@@ -255,8 +252,12 @@ def main(argv: list[str] | None = None) -> int:
         metrics=MetricsRecorder(config.metrics_path),
         dry_run=False,
     )
-    capturer = PowerShellScreenCapture()
-    ocr = WindowsOcr(language=args.ocr_language)
+    try:
+        capturer = make_screen_capture(args.capture_backend)
+    except CaptureError as exc:
+        log(str(exc), level="ERROR")
+        return 1
+    ocr = WindowsOcr(language=args.ocr_language) if args.input_mode == "ocr" else None
     capture_dir = Path("runs/phase2/captures")
 
     controller = InteractiveOverlay(
@@ -279,25 +280,30 @@ def main(argv: list[str] | None = None) -> int:
             except (CaptureError, OSError) as exc:
                 controller.show(f"[캡처 실패] {exc}")
                 return
-            controller.show("● 글자 읽는 중 (OCR)...")
-            try:
-                ocr_result = ocr.recognize(capture.image_path)
-            except (OcrError, OSError) as exc:
-                controller.show(f"[OCR 실패] {exc}")
-                return
-            source_text = ocr_result.text.strip()
-            if not source_text:
-                controller.show("(이 영역에서 글자를 찾지 못했어요)")
-                return
-            controller.show("● 번역 중 (NPU)...")
-            try:
-                translated = engine.translate_ocr_text(
-                    source_text,
-                    capture=capture,
-                    stream=not args.no_stream,
-                    input_mode="windows_ocr",
-                    metrics_extra={"ocr": ocr_metrics(ocr_result)},
+            if args.input_mode == "vlm":
+                controller.show("● 이미지 번역 중 (VLM)...")
+                translate = lambda: engine.translate_image(
+                    capture.image_path, capture=capture, stream=not args.no_stream,
+                    max_image_edge=args.vlm_max_edge,
                 )
+            else:
+                controller.show("● 글자 읽는 중 (OCR)...")
+                try:
+                    ocr_result = ocr.recognize(capture.image_path)
+                except (OcrError, OSError) as exc:
+                    controller.show(f"[OCR 실패] {exc}")
+                    return
+                source_text = ocr_result.text.strip()
+                if not source_text:
+                    controller.show("(이 영역에서 글자를 찾지 못했어요)")
+                    return
+                controller.show("● 번역 중 (NPU)...")
+                translate = lambda: engine.translate_ocr_text(
+                    source_text, capture=capture, stream=not args.no_stream,
+                    input_mode="windows_ocr", metrics_extra={"ocr": ocr_metrics(ocr_result)},
+                )
+            try:
+                translated = translate()
             except (BackendError, VisualEngineError, OSError) as exc:
                 controller.show(f"[번역 실패] {exc}")
                 return

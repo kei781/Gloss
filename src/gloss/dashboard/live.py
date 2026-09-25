@@ -27,13 +27,15 @@ class JsonlTail:
     tick instead of killing a long-running dashboard.
     """
 
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, *, include_existing: bool = False):
         self.path = path
         self._offset = 0
         self._file_id: tuple[int, ...] | None = None
+        self.bad_lines = 0
         try:
             stat = path.stat()
-            self._offset = path.read_bytes().rfind(b"\n") + 1
+            if not include_existing:
+                self._offset = path.read_bytes().rfind(b"\n") + 1
             self._file_id = _file_id_from_stat(stat)
         except OSError:
             pass
@@ -81,9 +83,12 @@ class JsonlTail:
             try:
                 row = json.loads(line)
             except json.JSONDecodeError:
+                self.bad_lines += 1
                 continue
             if isinstance(row, dict):
                 rows.append(row)
+            else:
+                self.bad_lines += 1
         return rows
 
 
@@ -111,6 +116,9 @@ class CpuWindow:
             return None
         return sum(values) / len(values)
 
+    def count_over(self, start_ts: float, end_ts: float) -> int:
+        return sum(1 for ts, _value in self._samples if start_ts <= ts <= end_ts)
+
 
 def assess_cpu_fallback(
     row: dict[str, Any], avg_cpu: float | None, threshold: float
@@ -126,6 +134,15 @@ def assess_cpu_fallback(
     if generation.get("token_count_source") == "dry_run":
         return False
     return avg_cpu >= threshold
+
+
+def assess_npu_fallback(
+    row: dict[str, Any], avg_npu: float | None, sample_count: int
+) -> bool:
+    generation = row.get("generation")
+    if not isinstance(generation, dict) or generation.get("token_count_source") == "dry_run":
+        return False
+    return avg_npu is not None and sample_count >= 2 and avg_npu < 1.0
 
 
 @dataclass(frozen=True)
@@ -158,6 +175,7 @@ class LiveDashboard:
         self.sleep = sleep
         self.clock = clock
         self.window = CpuWindow()
+        self.npu_window = CpuWindow()
 
     def run(self) -> None:
         log(
@@ -175,6 +193,7 @@ class LiveDashboard:
             sample = self.sampler.sample()
             last_sample = sample
             self.window.add(now, sample.cpu_percent)
+            self.npu_window.add(now, sample.npu_percent)
 
             for tail in self.tails:
                 for row in tail.read_new():
@@ -198,6 +217,8 @@ class LiveDashboard:
         elapsed = generation.get("elapsed_s")
         elapsed_s = float(elapsed) if isinstance(elapsed, (int, float)) else 0.0
         avg_cpu = self.window.average_over(now - elapsed_s - 1.0, now)
+        avg_npu = self.npu_window.average_over(now - elapsed_s - 1.0, now)
+        npu_samples = self.npu_window.count_over(now - elapsed_s - 1.0, now)
 
         log(
             "request completed",
@@ -211,7 +232,14 @@ class LiveDashboard:
             token_source=generation.get("token_count_source"),
             truncated=generation.get("truncated"),
             cpu_during=_round(avg_cpu),
+            npu_during=_round(avg_npu),
         )
+        if assess_npu_fallback(row, avg_npu, npu_samples):
+            log(
+                "possible CPU fallback: NPU compute stayed below 1% during generation",
+                level="WARN", npu_during=_round(avg_npu),
+                request_id=row.get("requestId"),
+            )
         if assess_cpu_fallback(row, avg_cpu, self.config.cpu_threshold):
             log(
                 "possible silent CPU fallback (보조 증거, ADR-009/FR-D6)",
@@ -231,6 +259,7 @@ class LiveDashboard:
             cpu=_round(sample.cpu_percent),
             ram_mb=_round(sample.ram_used_mb),
             ram_percent=_round(sample.ram_percent),
+            npu=_round(sample.npu_percent),
         )
 
 

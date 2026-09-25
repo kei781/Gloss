@@ -58,6 +58,22 @@ class WindowsOcrTest(unittest.TestCase):
         self.assertEqual(result.language, "en-US")
         self.assertIn("-Image", calls[0])
 
+    def test_recognize_many_returns_page_errors_without_losing_other_pages(self) -> None:
+        payload = json.dumps({"results": [
+            json.loads(_payload(text="First", lines=[{"text": "First"}])),
+            {"error": "bad image"},
+        ]})
+        run, calls = _fake_runner(stdout=payload)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ocr, image = self._ocr(run, Path(temp_dir))
+            second = Path(temp_dir) / "second.png"
+            second.write_bytes(image.read_bytes())
+            results = ocr.recognize_many([image, second])
+        self.assertEqual(len(calls), 1)
+        self.assertIn("-ImagesManifest", calls[0])
+        self.assertEqual(results[0].text, "First")
+        self.assertIsInstance(results[1], OcrError)
+
     def test_recognize_collapses_spaces_for_japanese(self) -> None:
         run, _calls = _fake_runner(
             stdout=_payload(language="ja", lines=[{"text": "古い 町 に 月光"}])

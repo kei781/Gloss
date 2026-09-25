@@ -10,14 +10,14 @@
 |---|---|---|
 | v0.4.0 | 2026-06-20 | 호크 (노상운) |
 
-> v0.4.0: 기기 변경(Snapdragon X Plus → Intel Core Ultra 358H). ADR-001(Hexagon/npurun) **Deprecated** 처리, **ADR-018**(Intel NPU 추론 백엔드: OpenVINO Model Server) 추가, ADR-012를 Intel NPU(OpenVINO) 전제로 갱신. v0.3.5: ADR-017(시스템 메트릭을 psutil 대신 Win32 ctypes로) 추가. v0.3.4: ADR-016(경량 OCR로 Windows.Media.Ocr 채택) 추가. v0.3.3: Phase 0 디렉토리 구조, `log()` 단일 출력 계약, env 기반 key/model 관리 추가. v0.3.2: 모델 프로파일 기반 교체 구조 추가. v0.3.1: NPU 검증 게이트 직접 증거화, CPU/GPU 보조 작업 범위 정리, 성공 기준 정량화. v0.3: 프로젝트명 **Gloss** 확정 + tagline 추가. (v0.2: ADR-001/003/009/010 갱신, ADR-012(모델 사이징)·013(Visual 2-경로)·014(실시간 자막 비목표) 추가.)
+> v0.4.0: 기기 변경(Snapdragon X Plus → Intel Core Ultra X7 358H). ADR-001(Hexagon/npurun) **Deprecated** 처리, **ADR-018**(Intel NPU 추론 백엔드: OpenVINO Model Server) 추가, ADR-012를 Intel NPU(OpenVINO) 전제로 갱신. v0.3.5: ADR-017(시스템 메트릭을 psutil 대신 Win32 ctypes로) 추가. v0.3.4: ADR-016(경량 OCR로 Windows.Media.Ocr 채택) 추가. v0.3.3: Phase 0 디렉토리 구조, `log()` 단일 출력 계약, env 기반 key/model 관리 추가. v0.3.2: 모델 프로파일 기반 교체 구조 추가. v0.3.1: NPU 검증 게이트 직접 증거화, CPU/GPU 보조 작업 범위 정리, 성공 기준 정량화. v0.3: 프로젝트명 **Gloss** 확정 + tagline 추가. (v0.2: ADR-001/003/009/010 갱신, ADR-012(모델 사이징)·013(Visual 2-경로)·014(실시간 자막 비목표) 추가.)
 
 ---
 
 ## ADR-001 — NPU 추론 백엔드: npurun (primary), NexaSDK / ONNX+QNN (alternatives). LiteRT·GGUF 런타임 기각
 **Status**: ~~Accepted~~ → **Deprecated (2026-06-20, ADR-018로 대체)**
 
-> **Deprecation note**: 이 결정은 Snapdragon X Plus(Qualcomm Hexagon NPU) 전제다. 기기가 Intel Core Ultra 358H(Intel AI Boost NPU)로 변경되어 npurun/Genie/QNN/HTP 경로는 더 이상 동작하지 않는다. Intel NPU 추론 백엔드는 **ADR-018**(OpenVINO Model Server) 참조. 이 ADR은 Hexagon 시절 의사결정 기록으로만 보존한다.
+> **Deprecation note**: 이 결정은 Snapdragon X Plus(Qualcomm Hexagon NPU) 전제다. 기기가 Intel Core Ultra X7 358H(Intel AI Boost NPU)로 변경되어 npurun/Genie/QNN/HTP 경로는 더 이상 동작하지 않는다. Intel NPU 추론 백엔드는 **ADR-018**(OpenVINO Model Server) 참조. 이 ADR은 Hexagon 시절 의사결정 기록으로만 보존한다.
 
 **Context**: PC(Windows ARM)의 NPU LLM 경로는 모바일과 다르다.
 - **GGUF 런타임**(Ollama/llama.cpp/LM Studio)은 ARM에서 CPU-only — NPU 미사용.
@@ -41,27 +41,27 @@
 
 ---
 
-## ADR-003 — Visual 모델: Qwen3-VL-4B 기본. OmniNeural-4B·Gemma 4 12B 기각
-**Status**: Accepted
+## ADR-003 — Visual 모델: Qwen3-VL-4B 후보, Gemma 4 E4B/E2B 비교
+**Status**: Revised (2026-09-24; VLM NPU 실측 전)
 
 **Context**: 게임 폰트는 스타일라이즈드·반투명·저대비라 전통 OCR이 취약. VLM은 이미지를 통째로 이해해 더 강건. 소스가 일본어(라노벨·게임)면 CJK 강세 필요.
 - **OmniNeural-4B**: NPU 네이티브 멀티모달이나 영어 위주 최적화로 한국어 출력이 약함.
 - **Gemma 4 12B**: encoder-free + MTP로 아키텍처는 매력적이나 12B는 이 기기에 과대 — 상세는 ADR-012.
 
-**Decision**: Visual 기본은 **Qwen3-VL-4B**(CJK 강세, OCR+번역 단일 패스). 속도가 급하면 ADR-013의 경량 경로로 다운시프트. OmniNeural·Gemma 4 12B 미채택. (Gemma를 꼭 쓰려면 엣지 사이즈 E4B/E2B가 NPU 결에 맞으나, CJK 번역엔 Qwen3가 우세.)
+**Decision**: **Qwen3-VL-4B**와 **Gemma 4 E4B/E2B**를 Visual 후보로 비교한다. 한국어 품질은 동등 조건에서 실측하고, vision encoder의 NPU 실행을 별도 입증한다. 그 전의 실사용 경로는 Windows OCR + 검증된 Qwen3-4B 텍스트 모델이다. Gemma 4 12B와 OmniNeural-4B는 현재 후보에서 제외한다.
 
-**Consequences**: CJK·스타일 텍스트에 강함. 별도 OCR 단계 제거로 CPU 부하↓. 단 저대비·산재 HUD에서 hallucination 가능(R2) → 구역 기반 캡처로 완화.
+**Consequences**: 단일패스 VLM을 선택하면 OCR 단계를 줄일 수 있지만, 현 기기에서 VLM의 NPU 적재·속도는 확인해야 한다. 저대비·산재 HUD의 누락·환각 위험(R2)은 구역 기반 캡처와 샘플 평가로 확인한다.
 
 ---
 
-## ADR-004 — Text 모델: Qwen3 (짧은 번역은 소형 우선)
-**Status**: Accepted
+## ADR-004 — Text 모델: Gemma 4 E4B/E2B 품질 평가, Qwen3-4B 검증 기준선
+**Status**: Revised (2026-09-24; Gemma 4 NPU 실측 전)
 
-**Context**: 텍스트 경로는 비전 불필요. CJK·문학 번역 품질과 NPU 적재 가능성·속도가 우선. 디코드는 모델 크기에 반비례(ADR-012).
+**Context**: 텍스트 경로는 비전 불필요. CJK·문학 번역 품질과 NPU 적재 가능성·속도가 우선. 디코드 속도는 모델 크기와 메모리 대역폭의 영향을 받는다(ADR-012).
 
-**Decision**: Text 엔진은 **Qwen3 계열**. 짧은 번역(게임 대사 등)은 **소형(≤1.7B)** 우선, 긴 문학 번역은 4B까지. Phase 0 측정으로 확정.
+**Decision**: Gemma 4 **E4B-it**를 한국어 번역 품질 우선 후보, **E2B-it**를 속도 후보로 시험한다. 현재 기본 모델은 Intel NPU에서 이미 확인된 Qwen3-4B를 유지한다. 동일 입력의 한국어 품질, NPU 직접 증거, 지연을 비교한 뒤 기본 모델을 결정한다. 절차와 출처는 `docs/gemma4-evaluation.md`에 둔다.
 
-**Consequences**: 짧은 번역의 체감 속도 확보. 모델 다종 운용 → 스왑 비용 고려(ADR-010).
+**Consequences**: Gemma 4의 한국어 품질 가설을 검증할 수 있다. 모델 다종 운용에는 적재·스왑 비용이 따른다(ADR-010).
 
 ---
 
@@ -142,14 +142,14 @@
 
 ---
 
-## ADR-012 — 모델 사이징 정책: ≤4B, 용례별 우선 소형. "클수록 좋다" 기각
-**Status**: Accepted (2026-06-20 Intel NPU 전제로 갱신; ≤4B 결정 자체는 유지)
+## ADR-012 — 모델 사이징 정책: NPU 실측으로 선택
+**Status**: Revised (2026-09-24)
 
-**Context**: 디코드는 **메모리 대역폭 바운드**라 속도 ≈ 대역폭 ÷ (모델 토큰당 바이트). RAM 용량·연산유닛으론 안 빨라지고, 모델 크기에 거의 반비례한다(4B Q4/INT4 ~15 tok/s, 12B ~5~6 tok/s 수준). Intel NPU(OpenVINO IR) 생태계도 LLM에서는 **~4B 파라미터 예산**이 실효 한계로, INT4 weight compression 기준이 NPU 결에 맞는다. 번역은 12B의 추론력 이점이 거의 무의미한 작업이라 대형 모델의 품질 이득이 작다. **Gemma 4 12B**는 Intel NPU용 OpenVINO IR 빌드·검증이 사실상 부재 → CPU/GPU로 떨어져 전제 붕괴. (실효 대역폭과 tok/s는 Intel 358H 실기에서 Phase 0로 재측정한다.)
+**Context**: 디코드는 모델 크기와 메모리 대역폭의 영향을 받는다. Intel Core Ultra X7 358H 실기에서 Qwen3-4B-Instruct-2507 INT4는 평균 **37.23 tok/s**로 측정됐다(Phase 0 노트). 이 수치를 Gemma 4나 VLM에 일반화하지 않는다. Gemma 4 E2B/E4B의 effective 파라미터는 2.3B/4.5B지만 임베딩 포함 총 파라미터는 5.1B/8B다. 따라서 기존의 단순한 '≤4B' 숫자만으로 NPU 메모리나 속도를 판단할 수 없다.
 
-**Decision**: 이 기기에서는 **≤4B만** 사용. 짧은 번역(게임 대사 등)은 **소형(0.6B~1.7B)** 우선, 정확도가 필요한 긴 문학은 4B. **양자화(Q4)** 를 속도 레버로 사용. 12B+ 는 채택하지 않고 필요 시 **dGPU(RTX 5080) 기기**로 분리.
+**Decision**: 이 기기에서는 Qwen3-4B와 Gemma 4 E2B/E4B를 Intel NPU에서 비교한다. E4B는 품질, E2B는 지연 후보로 두고 대칭 INT4 변환·적재·번역 품질을 검증한다. 12B 이상은 현 노트북의 활성 후보에서 제외한다.
 
-**Consequences**: 체감 속도 확보, 목적(가볍고 빠른 온디바이스) 부합. 대형 모델 품질이 필요한 작업은 별도 장비로 위임. 본문의 tok/s 수치는 계획 가정이며, Phase 0 측정값으로 최종 사이즈와 레이턴시 예산을 확정한다.
+**Consequences**: 모델 크기 이름만으로 결론 내리지 않고, 한국어 품질과 실제 NPU 지연을 함께 판단한다. 대형 모델 품질이 필요한 작업은 별도 장비에서 평가한다.
 
 ---
 
@@ -209,9 +209,9 @@
 ---
 
 ## ADR-018 — Intel NPU 추론 백엔드: OpenVINO Model Server (OVMS) GenAI, device=NPU. npurun/Genie/QNN(ADR-001) 대체
-**Status**: Accepted (Phase 0 Intel 358H 실기 재검증 필요)
+**Status**: Accepted (Intel X7 358H 텍스트 경로 Phase 0 PASS; VLM 미검증)
 
-**Context**: 기기가 Snapdragon X Plus(Qualcomm Hexagon NPU)에서 **Intel Core Ultra 358H(Intel AI Boost NPU)**로 변경됐다(2026-06-20). 이로써 ADR-001의 전제(Hexagon, libGenie/QnnHtp.dll, npurun)가 전부 무효가 된다.
+**Context**: 기기가 Snapdragon X Plus(Qualcomm Hexagon NPU)에서 **Intel Core Ultra X7 358H(Intel AI Boost NPU)**로 변경됐다(2026-06-20). 이로써 ADR-001의 전제(Hexagon, libGenie/QnnHtp.dll, npurun)가 전부 무효가 된다.
 - **Qualcomm 경로**(npurun/Genie/QNN EP, NexaSDK)는 Hexagon DSP 전용이라 Intel NPU에서 실행 불가 → **Deprecated**.
 - Intel(x86-64) NPU에서 LLM을 실제로 NPU에 올리는 1급 경로는 **OpenVINO**다. 모델은 **OpenVINO IR(.xml/.bin)**로 export(`optimum-cli export openvino`, INT4 weight compression)하고, 런타임에서 `device="NPU"`로 적재한다.
 - 기존 아키텍처(ADR-011)는 추론을 **OpenAI 호환 HTTP**로 추상화해 두었다. Intel 쪽에서 이 계약을 그대로 만족하는 서버가 **OpenVINO Model Server(OVMS)**로, GenAI 엔드포인트 `/v3/chat/completions`(+ `/v3/completions`)를 제공한다. 대안: standalone OpenVINO GenAI 서버, ONNX Runtime + OpenVINO/DirectML EP(폴백), Ollama+IPEX-LLM(NPU 미성숙).

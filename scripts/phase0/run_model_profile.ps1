@@ -7,7 +7,7 @@ param(
     [switch]$PrintOnly
 )
 
-# Intel Core Ultra 358H (Intel AI Boost NPU) 용 OpenVINO Model Server(OVMS) 드라이버.
+# Intel Core Ultra X7 358H (Intel AI Boost NPU) 용 OpenVINO Model Server(OVMS) 드라이버.
 # OVMS는 device=NPU로 OpenAI 호환 엔드포인트(/v3/chat/completions)를 제공한다.
 # Snapdragon/Hexagon(npurun) 시절 드라이버는 run_model_profile.npurun.ps1(DEPRECATED) 참조.
 # 단발 추론/벤치 측정은 scripts/phase0/measure_openai_backend.py로 수행한다.
@@ -70,6 +70,14 @@ if ($profileBackend -ne "ovms") {
     throw "Profile '$profileName' uses backend '$profileBackend'. run_model_profile.ps1 only supports ovms (OpenVINO Model Server, Intel NPU) profiles."
 }
 
+$pipelineType = [string]$profileJson.serve.pipeline_type
+if ([string]::IsNullOrWhiteSpace($pipelineType)) {
+    $pipelineType = if ($profileJson.capabilities -contains "vision") { "VLM" } else { "LM" }
+}
+if ($pipelineType -notin @("LM", "VLM")) {
+    throw "Profile '$profileName' needs an NPU-compatible pipeline_type: LM or VLM."
+}
+
 $runtimeModel = Get-EnvValue -Names @("GLOSS_PHASE0_MODEL", "GLOSS_MODEL")
 if ([string]::IsNullOrWhiteSpace($runtimeModel)) {
     $runtimeModel = [string]$profileJson.runtime_model
@@ -124,6 +132,13 @@ if ([string]::IsNullOrWhiteSpace($modelsDirValue)) {
 $modelsDir = Resolve-WorkspacePath -PathValue $modelsDirValue -ConfigDir $configDir
 New-Item -ItemType Directory -Force -Path $modelsDir | Out-Null
 
+$cacheDirValue = Get-EnvValue -Names @("GLOSS_PHASE0_CACHE_DIR")
+if ([string]::IsNullOrWhiteSpace($cacheDirValue)) {
+    $cacheDirValue = Join-Path (Split-Path -Parent $modelsDir) "ovms-cache"
+}
+$cacheDir = Resolve-WorkspacePath -PathValue $cacheDirValue -ConfigDir $configDir
+New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
+
 # REST port는 profile/config의 base_url에서 추출한다. 기본 8000.
 $baseUrl = Get-EnvValue -Names @("GLOSS_PHASE0_BASE_URL", "GLOSS_OPENAI_BASE_URL")
 if ([string]::IsNullOrWhiteSpace($baseUrl) -and $profileJson.serve.base_url) {
@@ -145,11 +160,16 @@ if (-not [string]::IsNullOrWhiteSpace($baseUrl)) {
 $arguments = @()
 switch ($Action) {
     "serve" {
+        # OVMS pull stores the generated graph under <repository>/<source_model>.
+        # Serving that exact path also avoids an implicit second HF download.
+        $modelDirectory = if ($sourceModel) { $sourceModel } else { $runtimeModel }
         $arguments = @(
             "--rest_port", $restPort,
-            "--model_repository_path", $modelsDir,
+            "--model_path", (Join-Path $modelsDir ($modelDirectory -replace '/', '\')),
+            "--cache_dir", $cacheDir,
             "--model_name", $runtimeModel,
             "--target_device", $targetDevice,
+            "--pipeline_type", $pipelineType,
             "--task", "text_generation"
         )
     }
@@ -161,9 +181,18 @@ switch ($Action) {
             "--pull",
             "--source_model", $sourceModel,
             "--model_repository_path", $modelsDir,
+            "--cache_dir", $cacheDir,
+            "--model_name", $runtimeModel,
             "--target_device", $targetDevice,
+            "--pipeline_type", $pipelineType,
             "--task", "text_generation"
         )
+        if (-not ($profileJson.artifact -and $profileJson.artifact.preconverted)) {
+            $arguments += @("--weight-format", "int4")
+            if ($profileJson.artifact.pull_extra_quantization_params) {
+                $arguments += @("--extra_quantization_params", [string]$profileJson.artifact.pull_extra_quantization_params)
+            }
+        }
     }
     "show" {
         $arguments = @("--version")
@@ -177,14 +206,31 @@ log "status:   $($profileJson.status)"
 log "ovms:     $ovmsPath"
 if ($Action -eq "pull") {
     log "source:   $sourceModel"
+    if (-not ($profileJson.artifact -and $profileJson.artifact.preconverted)) {
+        log "pull requires an OVMS build with Python/Optimum export support for raw Hugging Face models" -level "WARN"
+    }
+}
+
+if ($Action -in @("serve", "pull") -and $profileJson.serve.max_prompt_len) {
+    $arguments += @("--max_prompt_len", [string]$profileJson.serve.max_prompt_len)
 }
 log "device:   $targetDevice"
+log "pipeline: $pipelineType"
 log "models:   $modelsDir"
+log "cache:    $cacheDir"
 log "rest_port:$restPort"
 log "action:   $Action"
 
 if ($PrintOnly) {
-    log "command: $ovmsPath $($arguments -join ' ')"
+    $displayArguments = foreach ($argument in $arguments) {
+        $value = [string]$argument
+        if ($value -match '\s') {
+            "'" + ($value -replace "'", "''") + "'"
+        } else {
+            $value
+        }
+    }
+    log "command: $ovmsPath $($displayArguments -join ' ')"
     exit 0
 }
 

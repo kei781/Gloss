@@ -16,7 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the Gloss Phase 1 text engine.")
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--text", help="Translate an inline text block.")
-    source.add_argument("--file", type=Path, help="Translate a text or HTML file.")
+    source.add_argument("--file", type=Path, help="Translate a text, HTML, or PDF file.")
     source.add_argument("--url", help="Fetch and translate a URL.")
     parser.add_argument("--config", type=Path, help="Config JSON path.")
     parser.add_argument("--env-file", type=Path, help="Env file path.")
@@ -29,6 +29,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--temperature", type=float, help="Sampling temperature.")
     parser.add_argument("--timeout", type=float, help="Backend timeout seconds.")
     parser.add_argument("--max-chars-per-block", type=int, default=1800)
+    parser.add_argument(
+        "--max-estimated-tokens-per-block", type=int,
+        help="Source token budget for the NPU prompt (default: about 47%% of profile max_prompt_len).",
+    )
+    parser.add_argument("--render-js", action="store_true", help="Render URL in Chromium before extraction.")
+    parser.add_argument("--js-wait-ms", type=int, default=800, help="Wait after DOMContentLoaded in JS mode (0-10000 ms).")
+    parser.add_argument(
+        "--next-pages", type=int, default=0,
+        help="For --url, follow up to N same-site next-page links (0-20).",
+    )
+    parser.add_argument(
+        "--pdf-ocr-language", help="Windows OCR language for scanned PDF pages, e.g. en-US, ja, ko."
+    )
     parser.add_argument(
         "--url-ca-bundle",
         type=Path,
@@ -55,6 +68,10 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError(
                 "Use either --url-ca-bundle or --url-insecure-skip-verify, not both."
             )
+        if args.next_pages and not args.url:
+            raise ValueError("--next-pages requires --url.")
+        if args.render_js and not args.url:
+            raise ValueError("--render-js requires --url.")
         config = load_runtime_config(
             config_path=args.config,
             env_file=args.env_file,
@@ -84,6 +101,10 @@ def main(argv: list[str] | None = None) -> int:
             timeout_s=min(config.timeout_s, 60.0),
             url_verify_ssl=not args.url_insecure_skip_verify,
             url_ca_bundle=args.url_ca_bundle,
+            pdf_ocr_language=args.pdf_ocr_language,
+            next_pages=args.next_pages,
+            render_js=args.render_js,
+            js_wait_ms=args.js_wait_ms,
         )
         log(
             "source extracted",
@@ -106,6 +127,7 @@ def main(argv: list[str] | None = None) -> int:
         translated = engine.translate(
             document,
             max_chars_per_block=args.max_chars_per_block,
+            max_estimated_tokens_per_block=args.max_estimated_tokens_per_block,
             stream=not args.no_stream,
         )
     except (BackendError, ExtractionError, TextEngineError, ValueError) as exc:

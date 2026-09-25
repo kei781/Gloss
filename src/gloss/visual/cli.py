@@ -9,7 +9,8 @@ from gloss.config import load_runtime_config
 from gloss.log import log
 from gloss.metrics import MetricsRecorder
 from gloss.overlay.tk_overlay import OverlayError, OverlayGeometry, show_overlay_text
-from gloss.visual.capture import CaptureError, PowerShellScreenCapture
+from gloss.visual.capture import CaptureError, make_screen_capture
+from gloss.visual.display import default_overlay_geometry, enable_dpi_awareness
 from gloss.visual.engine import VisualEngine, VisualEngineError
 from gloss.visual.models import CaptureResult, Rect
 from gloss.visual.ocr import OcrError, WindowsOcr, ocr_metrics
@@ -21,6 +22,10 @@ DEFAULT_PHASE2_METRICS = Path("runs/phase2/visual-metrics.jsonl")
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the Gloss Phase 2 visual engine.")
     parser.add_argument("--capture-rect", help="Capture screen rect as X,Y,WIDTH,HEIGHT.")
+    parser.add_argument(
+        "--capture-backend", choices=["auto", "wgc", "dxgi", "gdi"], default="auto",
+        help="Capture with WGC, DXGI, or GDI; auto tries them in that order.",
+    )
     parser.add_argument(
         "--capture-output",
         type=Path,
@@ -34,6 +39,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--ocr-backend",
         choices=["windows"],
         help="Run OCR on the captured image (requires --capture-rect).",
+    )
+    ocr.add_argument(
+        "--image-file", type=Path,
+        help="Send a PNG/JPEG image to a VLM backend instead of using OCR.",
+    )
+    ocr.add_argument(
+        "--vlm", action="store_true",
+        help="Capture --capture-rect and send the image directly to a VLM backend.",
+    )
+    parser.add_argument(
+        "--vlm-max-edge", type=int, default=1024,
+        help="Resize the longest image edge before VLM inference (256-2048; default 1024).",
     )
     parser.add_argument("--ocr-language", help="OCR language tag, e.g. ko, en-US, ja.")
     parser.add_argument("--config", type=Path, help="Config JSON path.")
@@ -50,7 +67,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dry-run", action="store_true", help="Skip backend call.")
     parser.add_argument("--output", type=Path, help="Write translated text to this file.")
     parser.add_argument("--overlay", action="store_true", help="Show output in overlay.")
-    parser.add_argument("--overlay-rect", default="80,720,1000,180")
+    parser.add_argument("--overlay-rect", help="Physical-pixel X,Y,WIDTH,HEIGHT; default bottom-center.")
     parser.add_argument("--overlay-duration", type=float, default=6.0)
     return parser
 
@@ -58,15 +75,19 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    enable_dpi_awareness()
 
     try:
+        if (args.vlm or args.image_file) and not 256 <= args.vlm_max_edge <= 2048:
+            raise VisualEngineError("--vlm-max-edge must be between 256 and 2048.")
         source_text = read_ocr_text(args)
-        if args.ocr_backend and not args.capture_rect:
-            raise VisualEngineError("--ocr-backend requires --capture-rect.")
-        if source_text is None and not args.ocr_backend and not args.dry_run:
+        if args.image_file and args.capture_rect:
+            raise VisualEngineError("Use --image-file or --capture-rect, not both.")
+        if (args.ocr_backend or args.vlm) and not args.capture_rect:
+            raise VisualEngineError("--ocr-backend and --vlm require --capture-rect.")
+        if source_text is None and not args.ocr_backend and not args.vlm and not args.image_file and not args.dry_run:
             raise VisualEngineError(
-                "VLM image input is not wired yet. Provide --ocr-text, --ocr-file "
-                "or --ocr-backend windows."
+                "Provide --ocr-text, --ocr-file, --ocr-backend windows, --image-file, or --vlm."
             )
         capture = capture_if_requested(args)
         ocr_result = None
@@ -79,12 +100,11 @@ def main(argv: list[str] | None = None) -> int:
                 raise VisualEngineError(
                     "Windows OCR found no text in the captured region."
                 )
-        if source_text is None and args.dry_run and capture is not None:
+        if source_text is None and args.dry_run and capture is not None and not args.vlm:
             source_text = f"Captured screen region: {capture.image_path}"
-        if source_text is None:
+        if source_text is None and not args.vlm and not args.image_file:
             raise VisualEngineError(
-                "VLM image input is not wired yet. Provide --ocr-text, --ocr-file "
-                "or --ocr-backend windows."
+                "Provide --ocr-text, --ocr-file, --ocr-backend windows, --image-file, or --vlm."
             )
 
         config = load_runtime_config(
@@ -116,13 +136,20 @@ def main(argv: list[str] | None = None) -> int:
             metrics=MetricsRecorder(config.metrics_path),
             dry_run=args.dry_run,
         )
-        translated = engine.translate_ocr_text(
-            source_text,
-            capture=capture,
-            stream=not args.no_stream,
-            input_mode="windows_ocr" if ocr_result is not None else "ocr_text",
-            metrics_extra={"ocr": ocr_metrics(ocr_result)} if ocr_result else None,
-        )
+        if args.image_file or args.vlm:
+            image_path = args.image_file or capture.image_path
+            translated = engine.translate_image(
+                image_path, capture=capture, stream=not args.no_stream,
+                max_image_edge=args.vlm_max_edge,
+            )
+        else:
+            translated = engine.translate_ocr_text(
+                source_text,
+                capture=capture,
+                stream=not args.no_stream,
+                input_mode="windows_ocr" if ocr_result is not None else "ocr_text",
+                metrics_extra={"ocr": ocr_metrics(ocr_result)} if ocr_result else None,
+            )
     except (
         BackendError,
         CaptureError,
@@ -144,7 +171,7 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.write(output_text)
 
     if args.overlay:
-        geometry = OverlayGeometry.parse(args.overlay_rect)
+        geometry = OverlayGeometry.parse(args.overlay_rect) if args.overlay_rect else default_overlay_geometry()
         show_overlay_text(
             output_text.strip(),
             geometry=geometry,
@@ -157,7 +184,9 @@ def capture_if_requested(args: argparse.Namespace) -> CaptureResult | None:
     if not args.capture_rect:
         return None
     rect = Rect.parse(args.capture_rect)
-    return PowerShellScreenCapture().capture_rect(rect, output_dir=args.capture_output)
+    return make_screen_capture(args.capture_backend).capture_rect(
+        rect, output_dir=args.capture_output
+    )
 
 
 def read_ocr_text(args: argparse.Namespace) -> str | None:

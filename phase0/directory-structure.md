@@ -66,7 +66,7 @@ Gloss/
 
 ## v0.4.0 수정에 포함된 내용 (Snapdragon/Hexagon → Intel NPU)
 
-- 기기 변경(Snapdragon X Plus → Intel Core Ultra 358H)에 맞춰 NPU 백엔드를 npurun/Genie/QNN(Hexagon, deprecated)에서 **OVMS(OpenVINO Model Server, device=NPU)**로 전환.
+- 기기 변경(Snapdragon X Plus → Intel Core Ultra X7 358H)에 맞춰 NPU 백엔드를 npurun/Genie/QNN(Hexagon, deprecated)에서 **OVMS(OpenVINO Model Server, device=NPU)**로 전환.
 - `phase0/model-profiles.json`: 활성 프로파일 backend를 `ovms`로 전환, OpenVINO IR/INT4·`target_device`로 갱신. Hexagon 검증본은 deprecated 프로파일 `phi-3.5-mini-hexagon`으로 보존.
 - `phase0/config.example.json`·`.env.example`: `npurun_path`/`qnn_runtime_dir` → `ovms_path`/`target_device`, base_url → OVMS `/v3` 엔드포인트.
 - `scripts/phase0/run_model_profile.ps1`: OVMS 드라이버로 재작성. 기존 npurun 드라이버는 `run_model_profile.npurun.ps1`(DEPRECATED)로 보존.

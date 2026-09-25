@@ -9,7 +9,8 @@ from gloss.config import load_runtime_config
 from gloss.log import log
 from gloss.metrics import MetricsRecorder, now_iso
 from gloss.overlay.tk_overlay import OverlayController, OverlayError, OverlayGeometry
-from gloss.visual.capture import CaptureError, PowerShellScreenCapture
+from gloss.visual.capture import CaptureError, make_screen_capture
+from gloss.visual.display import default_overlay_geometry, enable_dpi_awareness
 from gloss.visual.engine import VisualEngine, VisualEngineError
 from gloss.visual.models import CaptureResult, Rect
 from gloss.visual.ocr import OcrError, OcrResult, WindowsOcr, ocr_metrics
@@ -38,6 +39,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--watch-rect",
         required=True,
         help="Screen rect to watch as X,Y,WIDTH,HEIGHT.",
+    )
+    parser.add_argument(
+        "--capture-backend", choices=["auto", "wgc", "dxgi", "gdi"], default="auto",
+        help="Capture with WGC, DXGI, or GDI; auto tries them in that order.",
     )
     parser.add_argument("--interval", type=float, default=2.0, help="Seconds between captures.")
     parser.add_argument(
@@ -98,18 +103,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Append timestamped translations to this file.",
     )
     parser.add_argument("--overlay", action="store_true", help="Show output in overlay.")
-    parser.add_argument("--overlay-rect", default="80,720,1000,180")
+    parser.add_argument("--overlay-rect", help="Physical-pixel X,Y,WIDTH,HEIGHT; default bottom-center.")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    enable_dpi_awareness()
 
     try:
         rect = Rect.parse(args.watch_rect)
         overlay_geometry = (
-            OverlayGeometry.parse(args.overlay_rect) if args.overlay else None
+            (OverlayGeometry.parse(args.overlay_rect) if args.overlay_rect else default_overlay_geometry())
+            if args.overlay else None
         )
         config = load_runtime_config(
             config_path=args.config,
@@ -177,14 +184,14 @@ def main(argv: list[str] | None = None) -> int:
             )
 
         watcher = RegionWatcher(
-            capture=PowerShellScreenCapture(),
+            capture=make_screen_capture(args.capture_backend),
             ocr=ocr,
             translate=translate,
             config=watch_config,
             output_dir=args.capture_output,
             on_event=lambda event: _handle_event(event, args),
         )
-    except (ValueError, OverlayError) as exc:
+    except (ValueError, OverlayError, CaptureError) as exc:
         log(str(exc), level="ERROR")
         return 1
 

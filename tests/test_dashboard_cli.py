@@ -33,8 +33,9 @@ def _metrics_row():
 
 
 class FakeSampler:
-    def __init__(self):
+    def __init__(self, *, npu_luid=None):
         self.calls = 0
+        self.npu_luid = npu_luid
 
     def sample(self) -> SystemSample:
         self.calls += 1
@@ -47,6 +48,10 @@ class FakeSampler:
 
 
 class DashboardCliTest(unittest.TestCase):
+    def test_openvino_device_luid_is_little_endian(self) -> None:
+        self.assertEqual(dashboard_cli.parse_npu_luid("601b010000000000"), 0x11B60)
+        self.assertEqual(dashboard_cli.parse_npu_luid("0x11b60"), 0x11B60)
+
     def setUp(self) -> None:
         self.probe_urls: list[str] = []
         self.probe_keys: list[str | None] = []
@@ -165,7 +170,7 @@ class DashboardCliTest(unittest.TestCase):
                 self.assertEqual(self.probe_keys[-1], "local")
 
     def test_sampler_failure_returns_error(self) -> None:
-        def broken_sampler():
+        def broken_sampler(*, npu_luid=None):
             raise SystemMetricsError("no win32")
 
         with tempfile.TemporaryDirectory() as temp_dir:
